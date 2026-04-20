@@ -2,7 +2,7 @@
 Name:   Javier S. Guerrero
 Date:   04/19/2026
 
-Transcribes audio to text
+Sets up the small language model
 
 '''
 from llama_cpp import Llama
@@ -14,7 +14,7 @@ llm = Llama(
     model_path=MODEL_PATH,
     n_ctx=2048,  # Context window size
     n_threads=10, # Adjust based on your CPU cores
-    n_batch=1024,
+    n_batch=1024, # Increase available memory 
     verbose=False
 )
 
@@ -42,7 +42,6 @@ def send_message(user_input):
     
     return reply
 
-# Example usage
 while True:
     prompt = input("Type a message: ")
     print(f"\n{send_message(prompt)}\n")
