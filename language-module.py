@@ -20,7 +20,7 @@ llm = Llama(
 
 # Create a chat history
 messages = [
-    {"role": "system", "content": "You are helpful NAO6 robot assistant."},
+    {"role": "system", "content": "You are a friendly and adorable robot called Rupert. You are the robot assistant for the Computer Club at Quincy College. You provide helpful and concise answers to students' questions."},
 ]
 
 def send_message(user_input):
@@ -41,8 +41,6 @@ def send_message(user_input):
     messages.append({"role": "assistant", "content": reply})
     
     return reply
-
-print("Type a message to begin: ")
 
 # Example usage
 while True:
