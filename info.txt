@@ -1,0 +1,8 @@
+model_path	Required. The local path to your .gguf file. This tells the library exactly which model weights to load.
+n_ctx	Context Window. The maximum number of tokens the model can "remember" at once (input + output). For SmolLM2, this should be set to 2048. Setting it higher than the model's training limit can cause gibberish; setting it lower saves RAM.
+n_gpu_layers	GPU Offloading. Specifies how many "layers" of the neural network to move to your GPU (VRAM).0 (Default): Entirely on CPU.-1: Move all layers to GPU (best for performance if you have enough VRAM).1 to N: Offload a specific number of layers to balance memory between CPU and GPU.
+n_threads	CPU Parallelism. The number of CPU threads used for generation. A good rule of thumb is to set this to your number of physical CPU cores (not logical threads).
+n_batch	Processing Batch Size. The number of tokens the model processes in parallel during the initial "prompt intake." Increasing this can speed up the start of a response but requires more memory. Default is usually 512.
+seed	Reproducibility. A specific number that ensures the model produces the exact same output for the same prompt. Set to -1 for random results every time.
+verbose	Logging. If True, it prints detailed technical logs about model loading and performance (like the "control token" warnings you saw). Set to False for a clean console.
+chat_format	Template Selection. Manually specifies the prompt template (e.g., "chatml", "llama-2"). Usually, the library auto-detects this from the GGUF metadata, but you can override it if the model isn't responding correctly.

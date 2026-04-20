@@ -19,7 +19,7 @@ llm = Llama(
 
 # Create a chat history
 messages = [
-    {"role": "system", "content": "You are 8 year old boy who loves to play and make silly jokes."},
+    {"role": "system", "content": "You are helpful and concise NAO6 robot assistant."},
 ]
 
 def send_message(user_input):
