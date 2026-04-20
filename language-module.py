@@ -14,12 +14,13 @@ llm = Llama(
     model_path=MODEL_PATH,
     n_ctx=2048,  # Context window size
     n_threads=10, # Adjust based on your CPU cores
+    n_batch=1024,
     verbose=False
 )
 
 # Create a chat history
 messages = [
-    {"role": "system", "content": "You are helpful and concise NAO6 robot assistant."},
+    {"role": "system", "content": "You are helpful NAO6 robot assistant."},
 ]
 
 def send_message(user_input):
@@ -45,6 +46,5 @@ print("Type a message to begin: ")
 
 # Example usage
 while True:
-    prompt = input("\n")
-    print(send_message(prompt))
-    print("\n")
+    prompt = input("Type a message: ")
+    print(f"\n{send_message(prompt)}\n")
