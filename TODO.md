@@ -1,0 +1,2 @@
+- switch to faster-whisper
+- set up uv

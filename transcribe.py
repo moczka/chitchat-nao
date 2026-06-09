@@ -10,7 +10,8 @@ import whisper
 model = whisper.load_model('tiny.en')
 
 
-result = model.transcribe('processed_audio_edilson.wav', language="en", fp16=False)
+result = model.transcribe('processed_audio_edilson.wav', language="en", 
+                          fp16=False)
 
-print(result["text"]);
+print(result["text"])
 

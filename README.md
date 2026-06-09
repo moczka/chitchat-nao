@@ -6,8 +6,13 @@ Uses SmolLm2-1.7B as the small language model (SLM) for NAO6 Robot.
 
 [https://huggingface.co/bartowski/SmolLM2-1.7B-Instruct-GGUF/resolve/main/SmolLM2-1.7B-Instruct-Q4_K_M.gguf](Download) 
 
+---
 
-# Install packages
+## Commands Run
 
-`pip install llama-cpp-python`
-`pip install whisper`
+`uv python install`
+`uv init`
+`uv add faster-whipser`
+`uv add llama-cpp-python`
+`uv add --dev ruff`
+
