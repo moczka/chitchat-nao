@@ -37,10 +37,9 @@ def consumer_thread(model):
 def producer_thread():
     global audio_queue
     # State variables
-    recording_count = 0
     audio_data = b""
     has_spoken = False
-    silence_count = 0
+    continued_silence_count = 0
     # Create instance of Voice Activated Detection
     vad = webrtcvad.Vad()
     vad.set_mode(3)
@@ -60,24 +59,24 @@ def producer_thread():
         audio_data += chunk
         # VAD only works with 30ms audio frames
         is_speech: bool = vad.is_speech(chunk, RATE)
-        # Increment on silence
+
         if is_speech:
             if has_spoken == False:
                 has_spoken = True
                 # Removes any previous silence
                 audio_data = chunk
-            silence_count = 0
+            # Reset silence counter
+            continued_silence_count = 0
         else:
-            silence_count += 1
+            # Increment on silence
+            continued_silence_count += 1
 
         # Close off recording after a 1-second silence.
-        if (has_spoken and silence_count >= SILENCE_LENGTH):
+        if (has_spoken and continued_silence_count >= SILENCE_LENGTH):
             # Reset count
-            silence_count = 0
+            continued_silence_count = 0
             # Reset speech detection
             has_spoken = False
-            # Increment recording count
-            recording_count = recording_count + 1
             # Store audio clip in queue
             print('Saving into audio queue...')
             audio_queue.put(audio_data)
