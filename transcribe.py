@@ -11,10 +11,10 @@ import numpy as np
 import queue
 import threading
 
-NB_CHANNELS = 1
+NB_CHANNELS = 1 # Mono audio (single channel)
 RATE = 16000
-CHUNK = 480 # To generate 30ms frames
-# Each audio frame is 30ms long so 30ms * 33 = roughly one second.
+CHUNK = 480 # To generate 30ms audio frames
+# Each audio frame is 30ms long so 30ms * 33 = roughly one second of silence
 SILENCE_LENGTH = 33
 
 audio_queue = queue.Queue()
@@ -29,7 +29,6 @@ def consumer_thread(model):
             # Transcribe text
             print('Transcribing audio clip...')
             segments, info = model.transcribe(audio_clip, language="en", beam_size=5)
-            print("Detected language '%s' with probability %f" % (info.language, info.language_probability))
             # https://medium.com/@venn5708/two-important-libraries-used-for-audio-processing-and-streaming-in-python-d3b718a75904
             for segment in segments:
                 print("[%.2fs -> %.2fs] %s" % (segment.start, segment.end, segment.text))
@@ -51,27 +50,22 @@ def producer_thread():
         channels=NB_CHANNELS,
         rate=RATE,
         input=True,
-        frames_per_buffer=CHUNK,    # 1 second of audio
+        frames_per_buffer=CHUNK,
     )
-
-    print("-" * 80)
     print("Microphone initialized, recording started...")
-    print("-" * 80)
-    print("TRANSCRIPTION")
-    print("-" * 80)
 
     while True: 
-        
-        chunk = stream.read(CHUNK) # Read 1 second of audio data
+        # Read 30ms of raw audio data
+        chunk = stream.read(CHUNK)
         audio_data += chunk
+        # VAD only works with 30ms audio frames
         is_speech: bool = vad.is_speech(chunk, RATE)
         # Increment on silence
         if is_speech:
             if has_spoken == False:
                 has_spoken = True
-                # Remove any previous silence
+                # Removes any previous silence
                 audio_data = chunk
-            #has_spoken = True
             silence_count = 0
         else:
             silence_count += 1
@@ -87,15 +81,6 @@ def producer_thread():
             # Store audio clip in queue
             print('Saving into audio queue...')
             audio_queue.put(audio_data)
-            # Write recording to file
-            # print("Writing to disk...")
-            # with wave.open(f"recordings/audio_{recording_count}.wav", 'wb') as wav_file:
-            #     wav_file.setnchannels(NB_CHANNELS)
-            #     wav_file.setsampwidth(audio.get_sample_size(pyaudio.paInt16))
-            #     wav_file.setframerate(RATE)
-            #     wav_file.writeframes(audio_data)
-            # Reset binary string
-            #audio_data = b""
 
 if __name__ == "__main__":
 
