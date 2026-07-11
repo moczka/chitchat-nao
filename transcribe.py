@@ -95,7 +95,7 @@ def producer_thread():
             #     wav_file.setframerate(RATE)
             #     wav_file.writeframes(audio_data)
             # Reset binary string
-            audio_data = b""
+            #audio_data = b""
 
 if __name__ == "__main__":
 
