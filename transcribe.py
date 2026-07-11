@@ -28,7 +28,7 @@ def consumer_thread(model):
             audio_clip: np.ndarray = np.frombuffer(audio_queue.get(), np.int16).astype(np.float32) / 255.0
             # Transcribe text
             print('Transcribing audio clip...')
-            segments, info = model.transcribe(audio_clip, language="en", beam_size=5, vad_filter=True, vad_parameters=dict(min_silence_duration_ms=500))
+            segments, info = model.transcribe(audio_clip, language="en", beam_size=5)
             print("Detected language '%s' with probability %f" % (info.language, info.language_probability))
             # https://medium.com/@venn5708/two-important-libraries-used-for-audio-processing-and-streaming-in-python-d3b718a75904
             for segment in segments:
@@ -67,14 +67,17 @@ def producer_thread():
         is_speech: bool = vad.is_speech(chunk, RATE)
         # Increment on silence
         if is_speech:
-            has_spoken = True
+            if has_spoken == False:
+                has_spoken = True
+                # Remove any previous silence
+                audio_data = chunk
+            #has_spoken = True
             silence_count = 0
         else:
             silence_count += 1
 
         # Close off recording after a 1-second silence.
         if (has_spoken and silence_count >= SILENCE_LENGTH):
-            audio_queue.put(audio_data)
             # Reset count
             silence_count = 0
             # Reset speech detection
@@ -91,7 +94,6 @@ def producer_thread():
             #     wav_file.setsampwidth(audio.get_sample_size(pyaudio.paInt16))
             #     wav_file.setframerate(RATE)
             #     wav_file.writeframes(audio_data)
-
             # Reset binary string
             audio_data = b""
 

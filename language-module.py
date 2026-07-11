@@ -7,7 +7,7 @@ Sets up the small language model
 '''
 from llama_cpp import Llama
 
-MODEL_PATH="./SmolLM2-1.7B-Instruct-Q4_K_M.gguf"
+MODEL_PATH="./models/SmolLM2-1.7B-Instruct-Q4_K_M.gguf"
 
 # Initialize the model
 llm = Llama(
