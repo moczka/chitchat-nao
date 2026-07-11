@@ -16,5 +16,6 @@ Uses SmolLm2-1.7B as the small language model (SLM) for NAO6 Robot.
 `uv add llama-cpp-python`
 `uv add webrtcvad-wheels`
 `uv add pyaudio`
+`uv add numpy`
 `uv add --dev ruff`
 

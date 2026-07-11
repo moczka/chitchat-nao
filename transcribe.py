@@ -7,7 +7,7 @@ Transcribes audio to text
 from faster_whisper import WhisperModel
 import webrtcvad
 import pyaudio
-import wave
+import numpy as np
 import queue
 import threading
 
@@ -18,6 +18,22 @@ CHUNK = 480 # To generate 30ms frames
 SILENCE_LENGTH = 33
 
 audio_queue = queue.Queue()
+
+def consumer_thread(model):
+
+    while True:
+
+        if not audio_queue.empty():
+            # Convert raw audio byte data into numpy array for model
+            audio_clip: np.ndarray = np.frombuffer(audio_queue.get(), np.int16).astype(np.float32) / 255.0
+            # Transcribe text
+            print('Transcribing audio clip...')
+            segments, info = model.transcribe(audio_clip, language="en", beam_size=5, vad_filter=True, vad_parameters=dict(min_silence_duration_ms=500))
+            print("Detected language '%s' with probability %f" % (info.language, info.language_probability))
+            # https://medium.com/@venn5708/two-important-libraries-used-for-audio-processing-and-streaming-in-python-d3b718a75904
+            for segment in segments:
+                print("[%.2fs -> %.2fs] %s" % (segment.start, segment.end, segment.text))
+
 
 def producer_thread():
     global audio_queue
@@ -66,31 +82,28 @@ def producer_thread():
             # Increment recording count
             recording_count = recording_count + 1
             # Store audio clip in queue
+            print('Saving into audio queue...')
             audio_queue.put(audio_data)
             # Write recording to file
-            print("Writing to disk...")
-            with wave.open(f"recordings/audio_{recording_count}.wav", 'wb') as wav_file:
-                wav_file.setnchannels(NB_CHANNELS)
-                wav_file.setsampwidth(audio.get_sample_size(pyaudio.paInt16))
-                wav_file.setframerate(RATE)
-                wav_file.writeframes(audio_data)
+            # print("Writing to disk...")
+            # with wave.open(f"recordings/audio_{recording_count}.wav", 'wb') as wav_file:
+            #     wav_file.setnchannels(NB_CHANNELS)
+            #     wav_file.setsampwidth(audio.get_sample_size(pyaudio.paInt16))
+            #     wav_file.setframerate(RATE)
+            #     wav_file.writeframes(audio_data)
 
             # Reset binary string
             audio_data = b""
 
 if __name__ == "__main__":
 
+    print('Downloading Whisper model...')
+
     model_size = "base.en"
     model = WhisperModel(model_size, device="cpu", compute_type="int8")
 
-    # print("Starting transcription...")
-
-    # segments, info = model.transcribe('processed_audio_edilson.wav', language="en", beam_size=5)
-
-    # print("Detected language '%s' with probability %f" % (info.language, info.language_probability))
-    # # https://medium.com/@venn5708/two-important-libraries-used-for-audio-processing-and-streaming-in-python-d3b718a75904
-    # for segment in segments:
-    #     print("[%.2fs -> %.2fs] %s" % (segment.start, segment.end, segment.text))
-
     producer = threading.Thread(target=producer_thread)
     producer.start()
+
+    consumer = threading.Thread(target=consumer_thread, args=[model])
+    consumer.start()
