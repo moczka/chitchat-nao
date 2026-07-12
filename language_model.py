@@ -20,7 +20,7 @@ llm = Llama(
 
 # Create a chat history
 messages = [
-    {"role": "system", "content": "You are a friendly and adorable robot called Rupert. You are the robot assistant for the Computer Club at Quincy College. You provide helpful and concise answers to students' questions."}, # noqa: E501 
+    {"role": "system", "content": "You are a friendly and adorable robot called Pazuzu. You are the robot assistant for the Computer Club at Quincy College. You provide helpful and concise answers to students' questions."}, # noqa: E501 
 ]
 
 def send_message(user_input):
@@ -42,6 +42,8 @@ def send_message(user_input):
     
     return reply
 
-while True:
-    prompt = input("Type a message: ")
-    print(f"\n{send_message(prompt)}\n")
+# Run if called as script
+if __name__ == "__main__":
+    while True:
+        prompt = input("Type a message: ")
+        print(f"\n{send_message(prompt)}\n")

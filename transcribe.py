@@ -10,12 +10,13 @@ import pyaudio
 import numpy as np
 import queue
 import threading
+from language_model import send_message
 
 NB_CHANNELS = 1 # Mono audio (single channel)
 RATE = 16000
 CHUNK = 480 # To generate 30ms audio frames
-# Each audio frame is 30ms long so 30ms * 33 = roughly one second of silence
-SILENCE_LENGTH = 33
+# Each audio frame is 30ms long so 30ms * 50 = roughly a second and a half of silence
+SILENCE_LENGTH = 50
 
 audio_queue = queue.Queue()
 
@@ -27,11 +28,19 @@ def consumer_thread(model):
             # Convert raw audio byte data into numpy array for model
             audio_clip: np.ndarray = np.frombuffer(audio_queue.get(), np.int16).astype(np.float32) / 255.0
             # Transcribe text
-            print('Transcribing audio clip...')
+            #print('Transcribing audio clip...')
             segments, info = model.transcribe(audio_clip, language="en", beam_size=5)
             # https://medium.com/@venn5708/two-important-libraries-used-for-audio-processing-and-streaming-in-python-d3b718a75904
+            user_message = ""
             for segment in segments:
-                print("[%.2fs -> %.2fs] %s" % (segment.start, segment.end, segment.text))
+                #print("[%.2fs -> %.2fs] %s" % (segment.start, segment.end, segment.text))
+                user_message += segment.text
+
+            if user_message != "":
+                print(f"User: {user_message}\n\n")
+                robot_resp = send_message(user_message)
+                print(robot_resp)
+                #print(user_message)
 
 
 def producer_thread():
@@ -78,7 +87,7 @@ def producer_thread():
             # Reset speech detection
             has_spoken = False
             # Store audio clip in queue
-            print('Saving into audio queue...')
+            #print('Saving into audio queue...')
             audio_queue.put(audio_data)
 
 if __name__ == "__main__":
