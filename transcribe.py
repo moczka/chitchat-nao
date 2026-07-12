@@ -17,6 +17,8 @@ RATE = 16000
 CHUNK = 480 # To generate 30ms audio frames
 # Each audio frame is 30ms long so 30ms * 50 = roughly a second and a half of silence
 SILENCE_LENGTH = 50
+# Minimum number of frames containing speech.
+SPEECH_MIN_LENGTH = 40
 # State variables
 should_listen = True
 
@@ -39,10 +41,10 @@ def consumer_thread(model):
                 user_message += segment.text
 
             if user_message != "":
-                print(f"User: {user_message}\n\n")
+                print(f"\nUser: {user_message}\n\n")
                 should_listen = False
                 print("Thinking...\n")
-                robot_resp = send_message(user_message)
+                robot_resp = f"Robot: {send_message(user_message)}"
                 print(robot_resp)
                 should_listen = True
                 #print(user_message)
@@ -54,6 +56,7 @@ def producer_thread():
     audio_data = b""
     has_spoken = False
     continued_silence_count = 0
+    speech_frames_count = 0
     # Create instance of Voice Activated Detection
     vad = webrtcvad.Vad()
     vad.set_mode(3)
@@ -76,9 +79,11 @@ def producer_thread():
 
         if is_speech:
             if has_spoken == False:
+                #print('Listening...')
                 has_spoken = True
                 # Removes any previous silence
                 audio_data = chunk
+            speech_frames_count += 1
             # Reset silence counter
             continued_silence_count = 0
         else:
@@ -87,14 +92,15 @@ def producer_thread():
 
         # Close off audio clip after silence is detected
         if (has_spoken and continued_silence_count >= SILENCE_LENGTH):
-            # Reset count
-            continued_silence_count = 0
-            # Reset speech detection
-            has_spoken = False
             # Store audio clip in queue
-            if should_listen:
+            if (should_listen and speech_frames_count >= SPEECH_MIN_LENGTH):
                 print('Saving into audio queue...')
                 audio_queue.put(audio_data)
+            # Reset counters
+            continued_silence_count = 0
+            speech_frames_count = 0
+            # Reset speech detection
+            has_spoken = False
 
 if __name__ == "__main__":
 

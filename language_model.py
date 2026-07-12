@@ -24,23 +24,27 @@ messages = [
 ]
 
 def send_message(user_input):
-    # Add user message to history
-    messages.append({"role": "user", "content": user_input})
-    
-    # Generate response
-    response = llm.create_chat_completion(
-        messages=messages,
-        temperature=0.7,
-        max_tokens=512
-    )
-    
-    # Extract model reply
-    reply = response['choices'][0]['message']['content']
-    
-    # Add reply to history for context
-    messages.append({"role": "assistant", "content": reply})
-    
-    return reply
+    try: 
+        # Add user message to history
+        messages.append({"role": "user", "content": user_input})
+        
+        # Generate response
+        response = llm.create_chat_completion(
+            messages=messages,
+            temperature=0.7,
+            max_tokens=512
+        )
+        
+        # Extract model reply
+        reply = response['choices'][0]['message']['content']
+        
+        # Add reply to history for context
+        messages.append({"role": "assistant", "content": reply})
+        
+        return reply
+    except:
+        print("Language model errored out...")
+        return ""
 
 # Run if called as script
 if __name__ == "__main__":
