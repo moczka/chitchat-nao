@@ -17,10 +17,13 @@ RATE = 16000
 CHUNK = 480 # To generate 30ms audio frames
 # Each audio frame is 30ms long so 30ms * 50 = roughly a second and a half of silence
 SILENCE_LENGTH = 50
+# State variables
+should_listen = True
 
 audio_queue = queue.Queue()
 
 def consumer_thread(model):
+    global should_listen
 
     while True:
 
@@ -28,7 +31,6 @@ def consumer_thread(model):
             # Convert raw audio byte data into numpy array for model
             audio_clip: np.ndarray = np.frombuffer(audio_queue.get(), np.int16).astype(np.float32) / 255.0
             # Transcribe text
-            #print('Transcribing audio clip...')
             segments, info = model.transcribe(audio_clip, language="en", beam_size=5)
             # https://medium.com/@venn5708/two-important-libraries-used-for-audio-processing-and-streaming-in-python-d3b718a75904
             user_message = ""
@@ -38,13 +40,16 @@ def consumer_thread(model):
 
             if user_message != "":
                 print(f"User: {user_message}\n\n")
+                should_listen = False
+                print("Thinking...\n")
                 robot_resp = send_message(user_message)
                 print(robot_resp)
+                should_listen = True
                 #print(user_message)
 
 
 def producer_thread():
-    global audio_queue
+    global audio_queue, should_listen
     # State variables
     audio_data = b""
     has_spoken = False
@@ -80,15 +85,16 @@ def producer_thread():
             # Increment on silence
             continued_silence_count += 1
 
-        # Close off recording after a 1-second silence.
+        # Close off audio clip after silence is detected
         if (has_spoken and continued_silence_count >= SILENCE_LENGTH):
             # Reset count
             continued_silence_count = 0
             # Reset speech detection
             has_spoken = False
             # Store audio clip in queue
-            #print('Saving into audio queue...')
-            audio_queue.put(audio_data)
+            if should_listen:
+                print('Saving into audio queue...')
+                audio_queue.put(audio_data)
 
 if __name__ == "__main__":
 
