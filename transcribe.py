@@ -10,7 +10,6 @@ import pyaudio
 import numpy as np
 import queue
 import threading
-from language_model import send_message
 
 NB_CHANNELS = 1 # Mono audio (single channel)
 RATE = 16000
@@ -22,32 +21,55 @@ SPEECH_MIN_LENGTH = 40
 # State variables
 should_listen = True
 
-audio_queue = queue.Queue()
 
-def consumer_thread(model):
-    global should_listen
+class Transcribe:
+    def __init__(self, model_name="base.en"):
+        # Controls whether audio stream is opened or not.
+        self.__should_listen = False
+        # Stores the audio clips to be transcribed
+        self.__pending_audio = queue.Queue()
+        # Stores transcribed audio clips
+        self.__transcribed_audio = queue.Queue()
+        # Download model
+        print('Downloading Whisper model...')
+        try:
+            self.__model = WhisperModel(model_name, device="cpu", compute_type="int8")
+            print('Whisper model downloaded successfully!')
+        except:
+            print('Failed to download Whisper model.')
+    
+    # Start capturing Audio from microphone
+    def start(self):
+        self.__should_listen = True
+    # Pauses audio capture
+    def stop(self):
+        self.__should_listen = False
+    
+    # Transcribes audio clips from queue into text
+    def __consumer_thread(self):
+        while True:
+            if not self.__audio_queue.empty():
+                # Convert raw audio byte data into numpy array for model
+                audio_clip: np.ndarray = np.frombuffer(audio_queue.get(), np.int16).astype(np.float32) / 255.0
+                # Transcribe text
+                segments, info = self.__model.transcribe(audio_clip, language="en", beam_size=5)
+                # https://medium.com/@venn5708/two-important-libraries-used-for-audio-processing-and-streaming-in-python-d3b718a75904
+                user_message = ""
+                for segment in segments:
+                    #print("[%.2fs -> %.2fs] %s" % (segment.start, segment.end, segment.text))
+                    user_message += segment.text
+                
+                # Place transcribed audio into queue
+                if (user_message != ""):
+                    self.__transcribed_audio.put(user_message)
 
-    while True:
 
-        if not audio_queue.empty():
-            # Convert raw audio byte data into numpy array for model
-            audio_clip: np.ndarray = np.frombuffer(audio_queue.get(), np.int16).astype(np.float32) / 255.0
-            # Transcribe text
-            segments, info = model.transcribe(audio_clip, language="en", beam_size=5)
-            # https://medium.com/@venn5708/two-important-libraries-used-for-audio-processing-and-streaming-in-python-d3b718a75904
-            user_message = ""
-            for segment in segments:
-                #print("[%.2fs -> %.2fs] %s" % (segment.start, segment.end, segment.text))
-                user_message += segment.text
 
-            if user_message != "":
-                print(f"\nUser: {user_message}\n\n")
-                should_listen = False
-                print("Thinking...\n")
-                robot_resp = f"Robot: {send_message(user_message)}"
-                print(robot_resp)
-                should_listen = True
-                #print(user_message)
+    
+
+
+        
+
 
 
 def producer_thread():
