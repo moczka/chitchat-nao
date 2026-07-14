@@ -12,7 +12,6 @@ def main():
     # Set up transcribing tool
     transcriber = Transcribe(model_name=WHISPER_MODEL)
     transcriber.init()
-    transcriber.start()
     # Prompt user
     print('Listening... Ask Pazuzu anything.')
     # Queue with user prompts

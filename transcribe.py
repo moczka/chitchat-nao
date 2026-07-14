@@ -48,11 +48,11 @@ class Transcribe:
             self.__audio_stream.close()
             self.__audio_producer.terminate();
 
-    # Initializes capturing audio and transcription process
+    # Initializes capturing audio and transcription process (should only be called once)
     def init(self):
+        self.__should_listen = True
         producer = threading.Thread(target=self.__producer_thread)
         producer.start()
-
         consumer = threading.Thread(target=self.__consumer_thread)
         consumer.start()
     
