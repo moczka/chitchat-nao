@@ -19,6 +19,10 @@ SILENCE_LENGTH = 50
 # Minimum number of frames containing speech.
 SPEECH_MIN_LENGTH = 20
 
+# TODO: Only start a consumer thread when there are items in the pending_audio queue
+# TODO: Implement PyAudio non-blocking mode to remove the need of the producer_thread https://people.csail.mit.edu/hubert/pyaudio/docs/#id4
+# TODO: Make use of the stream.strart_strean() and stream.stop_stream() methods instead of __should_listen https://people.csail.mit.edu/hubert/pyaudio/docs/
+
 
 class Transcribe:
     def __init__(self, model_name="base.en", debug_on=False):
