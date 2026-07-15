@@ -27,7 +27,7 @@ def main():
             robot_resp = send_message(user_prompt)
             print(f"\nRobot: {robot_resp}\n")
             # Re-enable transcriber
-            #transcriber.proceed()
+            transcriber.proceed()
 
 
 

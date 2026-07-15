@@ -119,7 +119,7 @@ class Transcribe:
         
         self.__print("Microphone initialized, recording started...")
 
-        while self.__audio_stream.is_active():
+        while not self.__audio_stream.is_stopped():
             # Read 30ms of raw audio data
             chunk = self.__audio_stream.read(CHUNK)
             audio_data += chunk
