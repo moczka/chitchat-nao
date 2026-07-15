@@ -18,16 +18,20 @@ def main():
     user_prompts = transcriber.get_transcriptions()
 
     while True:
-        if (not user_prompts.empty()):
-            user_prompt = user_prompts.get()
-            print(f"User: {user_prompt}")
-            print('\nThinking...\n')
-            # Stop capturing audio while SLM generates an answer
-            transcriber.pause()
-            robot_resp = send_message(user_prompt)
-            print(f"\nRobot: {robot_resp}\n")
-            # Re-enable transcriber
-            transcriber.proceed()
+        try:
+            if (not user_prompts.empty()):
+                user_prompt = user_prompts.get()
+                print(f"User: {user_prompt}")
+                print('\nThinking...\n')
+                # Stop capturing audio while SLM generates an answer
+                transcriber.pause()
+                robot_resp = send_message(user_prompt)
+                print(f"\nRobot: {robot_resp}\n")
+                # Re-enable transcriber
+                transcriber.proceed()
+        except KeyboardInterrupt:
+            print('Exiting...')
+            break
 
 
 
