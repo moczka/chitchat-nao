@@ -55,7 +55,6 @@ class Transcribe:
 
     # Initializes capturing audio and transcription process (should only be called once)
     def init(self):
-        self.__should_listen = True
         # Create pyAudio instance and initialize audio stream. 
         self.__audio_producer = pyaudio.PyAudio()
         self.__audio_stream = self.__audio_producer.open(
@@ -78,7 +77,7 @@ class Transcribe:
         if (not self.__audio_capture_thread.is_alive()):
             self.__audio_capture_thread = threading.Thread(target=self.__producer_thread)
             self.__audio_capture_thread.start()
-            print('Creating new producer thread')
+            self.__print('Creating new producer thread')
 
 
     # Pauses audio capture
@@ -107,7 +106,7 @@ class Transcribe:
             if (user_message != ""):
                 self.__transcribed_audio.put(user_message)
 
-        print("Consumer thread ended.")
+        self.__print("Consumer thread ended.")
     
     # Processes the audio stream and creates audio clips to be transcribed later
     def __producer_thread(self):
@@ -159,7 +158,7 @@ class Transcribe:
                 # Reset speech detection
                 has_spoken = False
             
-        print("producer thread ended.")
+        self.__print("producer thread ended.")
     
     # Prints out a debugging message
     def __print(self, message):
