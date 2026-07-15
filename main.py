@@ -11,7 +11,6 @@ WHISPER_MODEL = "base.en"
 def main():
     # Set up transcribing tool
     transcriber = Transcribe(model_name=WHISPER_MODEL, debug_on=True)
-    transcriber.init()
     # Prompt user
     print('Listening... Ask Pazuzu anything.')
     # Queue with user prompts
@@ -24,11 +23,11 @@ def main():
                 print(f"User: {user_prompt}")
                 print('\nThinking...\n')
                 # Stop capturing audio while SLM generates an answer
-                transcriber.pause()
+                transcriber.stop()
                 robot_resp = send_message(user_prompt)
                 print(f"\nRobot: {robot_resp}\n")
                 # Re-enable transcriber
-                #transcriber.proceed()
+                transcriber.start()
                 transcriber.get_thread_status()
         except KeyboardInterrupt:
             print('Exiting...')
