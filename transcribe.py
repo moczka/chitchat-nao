@@ -23,6 +23,8 @@ class Transcribe:
     def __init__(self, model_name="base.en", debug_on=False):
         # Controls whether or not we print out debugging messages
         self.__debug_on = debug_on
+        # Controls whether or not to capture audio
+        self.__capture_audio = False
         # Reference to audio stream & producer
         self.__audio_stream = None
         self.__audio_producer = None
@@ -53,6 +55,7 @@ class Transcribe:
 
     # Initializes capturing audio and transcription process (should only be called once)
     def init(self):
+        self.__capture_audio = True
         # Create pyAudio instance and initialize audio stream. 
         self.__audio_producer = pyaudio.PyAudio()
         self.__audio_stream = self.__audio_producer.open(
@@ -70,17 +73,24 @@ class Transcribe:
     
     # Start capturing Audio from microphone
     def proceed(self):
-        self.__audio_stream.start_stream()
+        self.__capture_audio = True
+        #self.__audio_stream.start_stream()
         # re-create the audio capture thread if it has completed
         if (not self.__audio_capture_thread.is_alive()):
             self.__audio_capture_thread = threading.Thread(target=self.__producer_thread)
             self.__audio_capture_thread.start()
             self.__print('Creating new producer thread')
 
+    def get_thread_status(self):
+        self.__print(f"Producer Thread Active: {self.__audio_capture_thread.is_alive()}")
+        self.__print(f"Consumer Thread Active: {self.__transcriber_thread.is_alive()}")
+
 
     # Pauses audio capture
     def pause(self):
-        self.__audio_stream.stop_stream()
+        self.__capture_audio = False
+        #self.__audio_stream.stop_stream()
+
 
     # Returns the queue with transcribed audio
     def get_transcriptions(self):
@@ -116,7 +126,7 @@ class Transcribe:
         
         self.__print("Microphone initialized, recording started...")
 
-        while not self.__audio_stream.is_stopped() and self.__audio_stream.is_active():
+        while self.__capture_audio:
             # Read 30ms of raw audio data
             chunk = self.__audio_stream.read(CHUNK)
             audio_data += chunk
