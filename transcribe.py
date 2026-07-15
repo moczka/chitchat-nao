@@ -51,7 +51,10 @@ class Transcribe:
         # Release I/O resource
         if (self.__audio_stream != None and self.__audio_producer):
             self.__audio_stream.close()
-            self.__audio_producer.terminate();
+            self.__audio_producer.terminate()
+        
+        self.__audio_capture_thread.join()
+        self.__transcriber_thread.join()
 
     # Initializes capturing audio and transcription process (should only be called once)
     def init(self):

@@ -31,7 +31,7 @@ def main():
                 transcriber.proceed()
         except KeyboardInterrupt:
             print('Exiting...')
-            break
+            return 0
 
 
 
