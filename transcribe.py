@@ -70,6 +70,7 @@ class Transcribe:
     
     # Start capturing Audio from microphone
     def start(self):
+        # Open a new audio capture stream
         self.__audio_stream = self.__audio_producer.open(
             format=pyaudio.paInt16,
             channels=NB_CHANNELS,
