@@ -23,11 +23,11 @@ def main():
             print(f"User: {user_prompt}")
             print('\nThinking...\n')
             # Stop capturing audio while SLM generates an answer
-            transcriber.stop()
+            transcriber.pause()
             robot_resp = send_message(user_prompt)
             print(f"\nRobot: {robot_resp}\n")
             # Re-enable transcriber
-            transcriber.start()
+            #transcriber.proceed()
 
 
 
