@@ -11,6 +11,8 @@ import numpy as np
 import queue
 import threading
 
+# PyAudio Settings (Might be different on your system)
+INPUT_DEVICE_INDEX=14
 NB_CHANNELS = 1 # Mono audio (single channel)
 RATE = 16000
 CHUNK = 480 # To generate 30ms audio frames
@@ -51,6 +53,7 @@ class Transcribe:
             rate=RATE,
             input=True,
             frames_per_buffer=CHUNK,
+            input_device_index=INPUT_DEVICE_INDEX
         )
         # Run audio stream producer in a separate thread
         self.__audio_capture_thread = threading.Thread(target=self.__producer_thread)
@@ -61,12 +64,17 @@ class Transcribe:
     # Destructor
     def __del__(self):
         # Release I/O resource
-        if (self.__audio_stream != None and self.__audio_producer):
+        if (self.__audio_stream != None and self.__audio_producer != None):
             self.__audio_stream.close()
             self.__audio_producer.terminate()
         # Allow all threads to complete running
         self.__audio_capture_thread.join()
-        self.__transcriber_thread.join() 
+        self.__transcriber_thread.join()
+
+    # Helper function to list out all the input microphone devices
+    def print_input_devices(self):
+        for i in range(self.__audio_producer.get_device_count()):
+            print(f"Index: {i}: {self.__audio_producer.get_device_info_by_index(i)['name']}")
     
     # Start capturing Audio from microphone
     def start(self):
@@ -79,6 +87,7 @@ class Transcribe:
             rate=RATE,
             input=True,
             frames_per_buffer=CHUNK,
+            input_device_index=INPUT_DEVICE_INDEX
         )
         # Run audio stream producer in a separate thread
         self.__audio_capture_thread = threading.Thread(target=self.__producer_thread)
@@ -91,7 +100,9 @@ class Transcribe:
 
     # Pauses audio capture
     def stop(self):
+        # Stop processing stream
         self.__capture_audio = False
+        # Wait for thread to finish before closing and terminating stream
         self.__audio_capture_thread.join()
         self.__audio_stream.close()
         self.__audio_producer.terminate()
