@@ -24,7 +24,7 @@ class Transcribe:
         # Controls whether or not we print out debugging messages
         self.__debug_on = debug_on
         # Controls whether or not to capture audio
-        self.__capture_audio = False
+        self.__capture_audio = True
         # Reference to audio stream & producer
         self.__audio_stream = None
         self.__audio_producer = None
@@ -64,13 +64,15 @@ class Transcribe:
         if (self.__audio_stream != None and self.__audio_producer):
             self.__audio_stream.close()
             self.__audio_producer.terminate()
-        
+        # Allow all threads to complete running
         self.__audio_capture_thread.join()
         self.__transcriber_thread.join() 
     
     # Start capturing Audio from microphone
     def start(self):
+        self.__capture_audio = True
         # Open a new audio capture stream
+        self.__audio_producer = pyaudio.PyAudio()
         self.__audio_stream = self.__audio_producer.open(
             format=pyaudio.paInt16,
             channels=NB_CHANNELS,
@@ -89,7 +91,9 @@ class Transcribe:
 
     # Pauses audio capture
     def stop(self):
-        self.__audio_producer.close()
+        self.__capture_audio = False
+        self.__audio_capture_thread.join()
+        self.__audio_stream.close()
         self.__audio_producer.terminate()
 
     # Returns the queue with transcribed audio
@@ -126,7 +130,7 @@ class Transcribe:
         
         self.__print("Microphone initialized, recording started...")
 
-        while self.__audio_stream.is_active():
+        while self.__capture_audio:
             # Read 30ms of raw audio data
             chunk = self.__audio_stream.read(CHUNK)
             audio_data += chunk
