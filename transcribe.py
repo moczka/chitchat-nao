@@ -23,7 +23,7 @@ class Transcribe:
     def __init__(self, model_name="base.en", debug_on=False):
         # Controls whether or not we print out debugging messages
         self.__debug_on = debug_on
-        # Controls whether audio should be captured from the stram
+        # Controls whether audio should be captured from the stream
         self.__capture_audio = True
         # Reference to audio stream & producer
         self.__audio_stream = None
