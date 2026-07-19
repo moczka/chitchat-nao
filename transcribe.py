@@ -28,6 +28,12 @@ class Transcribe:
         # Reference to audio stream & producer
         self.__audio_stream = None
         self.__audio_producer = None
+        # Reference to audio data collected from the stream
+        self.__audio_data = b""
+        # State variables used to process audio stream
+        self.__has_spoken = False
+        self.__continued_silence_count = 0
+        self.__speech_frames_count = 0
         # Create instance of Voice Activated Detection (VAD) utility
         self.__vad = webrtcvad.Vad()
         self.__vad.set_mode(3)
@@ -88,6 +94,44 @@ class Transcribe:
     def get_transcriptions(self):
         return self.__transcribed_audio
     
+    # Processes audio stream by detecting any speech, sanatizing any extra audio silence
+    # And determining when to save the audio stream data into a clip to be transcribed.
+    def __process_audio_sream(self):
+
+        # Determnies whether to save audio data into transcriber queue
+        should_save_audio_data = False
+        # Read 30ms of raw audio data
+        chunk = self.__audio_stream.read(CHUNK)
+        self.__audio_data += chunk
+        # VAD only works with 30ms audio frames
+        is_speech: bool = self.__vad.is_speech(chunk, RATE)
+
+        if is_speech:
+            if self.__has_spoken == False:
+                self.__print('Listening...')
+                self.__has_spoken = True
+                # Removes any previous silence
+                self.__audio_data = chunk
+            self.__speech_frames_count += 1
+            # Reset silence counter since speech was detected
+            self.__continued_silence_count = 0
+        else:
+            # Increment on silence
+            self.__continued_silence_count += 1
+
+        # Close off audio clip after silence is detected
+        if (self.__has_spoken and self.__continued_silence_count >= SILENCE_LENGTH):
+            # Only save audio clips with meaningful speech 
+            if (self.__speech_frames_count >= SPEECH_MIN_LENGTH):
+                should_save_audio_data = True
+            # Reset counters
+            self.__continued_silence_count = 0
+            self.__speech_frames_count = 0
+            # Reset speech detection flag
+            self.__has_spoken = False
+
+        return should_save_audio_data
+    
     # Transcribes audio clips from queue into text
     def __consumer_thread(self):
         # Transcribe all the pending audio clips
@@ -110,53 +154,21 @@ class Transcribe:
     
     # Processes the audio stream and creates audio clips to be transcribed later
     def __producer_thread(self):
-        # State variables
-        audio_data = b""
-        has_spoken = False
-        continued_silence_count = 0
-        speech_frames_count = 0
         
         self.__print("Microphone initialized, recording started...")
 
         while self.__capture_audio:
-            # Read 30ms of raw audio data
-            chunk = self.__audio_stream.read(CHUNK)
-            audio_data += chunk
-            # VAD only works with 30ms audio frames
-            is_speech: bool = self.__vad.is_speech(chunk, RATE)
 
-            if is_speech:
-                if has_spoken == False:
-                    self.__print('Listening...')
-                    has_spoken = True
-                    # Removes any previous silence
-                    audio_data = chunk
-                speech_frames_count += 1
-                # Reset silence counter
-                continued_silence_count = 0
-            else:
-                # Increment on silence
-                continued_silence_count += 1
-
-            # Close off audio clip after silence is detected
-            if (has_spoken and continued_silence_count >= SILENCE_LENGTH):
-                self.__print("About to save audio clip...")
-                # Store audio clip in queue
-                if (speech_frames_count >= SPEECH_MIN_LENGTH):
-                    self.__print('Saving into audio queue...')
-                    self.__pending_audio.put(audio_data)
-                    # Run fresh transcriber thread
-                    if (self.__transcriber_thread.is_alive() and self.__transcriber_thread.native_id == None):
-                        self.__transcriber_thread.start()
-                    else:
-                        # Create a new one if last one has finished
-                        self.__transcriber_thread = threading.Thread(target=self.__consumer_thread)
-                        self.__transcriber_thread.start()
-                # Reset counters
-                continued_silence_count = 0
-                speech_frames_count = 0
-                # Reset speech detection
-                has_spoken = False
+            if self.__process_audio_sream():
+                self.__print('Saving into audio queue...')
+                self.__pending_audio.put(self.__audio_data)
+                # Run fresh transcriber thread
+                if (self.__transcriber_thread.is_alive() and self.__transcriber_thread.native_id == None):
+                    self.__transcriber_thread.start()
+                else:
+                    # Create a new one if last one has finished
+                    self.__transcriber_thread = threading.Thread(target=self.__consumer_thread)
+                    self.__transcriber_thread.start()
             
         self.__print("producer thread ended.")
     
