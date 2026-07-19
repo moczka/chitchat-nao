@@ -23,6 +23,8 @@ class Transcribe:
     def __init__(self, model_name="base.en", debug_on=False):
         # Controls whether or not we print out debugging messages
         self.__debug_on = debug_on
+        # Controls whether audio should be captured from the stram
+        self.__capture_audio = True
         # Reference to audio stream & producer
         self.__audio_stream = None
         self.__audio_producer = None
@@ -41,18 +43,6 @@ class Transcribe:
         except:
             self.__print('Failed to download Whisper model.')
 
-    # Destructor
-    def __del__(self):
-        # Release I/O resource
-        if (self.__audio_stream != None and self.__audio_producer):
-            self.__audio_stream.close()
-            self.__audio_producer.terminate()
-        
-        self.__audio_capture_thread.join()
-        self.__transcriber_thread.join()
-
-    # Initializes capturing audio and transcription process (should only be called once)
-    def init(self):
         # Create pyAudio instance and initialize audio stream. 
         self.__audio_producer = pyaudio.PyAudio()
         self.__audio_stream = self.__audio_producer.open(
@@ -67,9 +57,20 @@ class Transcribe:
         self.__audio_capture_thread.start()
         # Prepare the transcriber to run on a separate thread
         self.__transcriber_thread = threading.Thread(target=self.__consumer_thread)
+
+    # Destructor
+    def __del__(self):
+        self.__capture_audio = False
+        # Bring threads to foreground
+        self.__audio_capture_thread.join()
+        self.__transcriber_thread.join()
+        # Release I/O resource
+        self.__audio_stream.close()
+        self.__audio_producer.terminate()
     
     # Start capturing Audio from microphone
     def proceed(self):
+        self.__capture_audio = True
         self.__audio_stream.start_stream()
         # re-create the audio capture thread if it has completed
         if (not self.__audio_capture_thread.is_alive()):
@@ -80,6 +81,9 @@ class Transcribe:
 
     # Pauses audio capture
     def pause(self):
+        self.__capture_audio = False
+        # Bring thread to foreground for completion. 
+        self.__audio_capture_thread.join()
         self.__audio_stream.stop_stream()
 
     # Returns the queue with transcribed audio
@@ -116,7 +120,7 @@ class Transcribe:
         
         self.__print("Microphone initialized, recording started...")
 
-        while not self.__audio_stream.is_stopped() and self.__audio_stream.is_active():
+        while self.__capture_audio:
             # Read 30ms of raw audio data
             chunk = self.__audio_stream.read(CHUNK)
             audio_data += chunk
