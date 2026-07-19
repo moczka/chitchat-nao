@@ -28,7 +28,7 @@ class Transcribe:
         # Reference to audio stream & producer
         self.__audio_stream = None
         self.__audio_producer = None
-        # Reference to audio data collected from the stream
+        # Reference to audio data collected from audio stream
         self.__audio_data = b""
         # State variables used to process audio stream
         self.__has_spoken = False
@@ -74,7 +74,7 @@ class Transcribe:
         self.__audio_stream.close()
         self.__audio_producer.terminate()
     
-    # Start capturing Audio from microphone
+    # Continue capturing audio
     def proceed(self):
         self.__capture_audio = True
         self.__audio_stream.start_stream()
