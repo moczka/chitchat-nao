@@ -28,8 +28,6 @@ class Transcribe:
         # Reference to audio stream & producer
         self.__audio_stream = None
         self.__audio_producer = None
-        # Reference to audio data collected from audio stream
-        self.__audio_data = b""
         # State variables used to process audio stream
         self.__has_spoken = False
         self.__continued_silence_count = 0
@@ -96,12 +94,10 @@ class Transcribe:
     
     # Processes audio stream by detecting any speech, sanatizing any extra audio silence
     # And determining when to save the audio stream data into a clip to be transcribed.
-    def __process_audio_sream(self):
-        # Determnies whether to save audio data into transcriber queue
+    def __process_audio_data(self, audio_data, chunk):
+        # whether to save audio data into transcriber queue
         should_save_audio_data = False
-        # Read 30ms of raw audio data
-        chunk = self.__audio_stream.read(CHUNK)
-        self.__audio_data += chunk
+        audio_data += chunk
         # VAD only works with 30ms audio frames
         is_speech: bool = self.__vad.is_speech(chunk, RATE)
 
@@ -110,7 +106,7 @@ class Transcribe:
                 self.__print('Listening...')
                 self.__has_spoken = True
                 # Removes any previous silence
-                self.__audio_data = chunk
+                audio_data = chunk
             self.__speech_frames_count += 1
             # Reset silence counter since speech was detected
             self.__continued_silence_count = 0
@@ -129,7 +125,7 @@ class Transcribe:
             # Reset speech detection flag
             self.__has_spoken = False
 
-        return should_save_audio_data
+        return should_save_audio_data, audio_data
     
     # Transcribes audio clips from queue into text
     def __consumer_thread(self):
@@ -148,19 +144,26 @@ class Transcribe:
             # Place transcribed audio into queue
             if (user_message != ""):
                 self.__transcribed_audio.put(user_message)
-
         self.__print("Consumer thread ended.")
     
     # Processes the audio stream and creates audio clips to be transcribed later
     def __producer_thread(self):
         
         self.__print("Microphone initialized, recording started...")
+        # Reference to audio data collected from audio stream
+        audio_data = b""
 
         while self.__capture_audio:
 
-            if self.__process_audio_sream():
+            # Read 30ms of raw audio data from stream
+            chunk = self.__audio_stream.read(CHUNK)
+            should_save_audio, processed_audio_data = self.__process_audio_data(audio_data, chunk)
+            # Update current audio data
+            audio_data = processed_audio_data
+
+            if should_save_audio:
                 self.__print('Saving into audio queue...')
-                self.__pending_audio.put(self.__audio_data)
+                self.__pending_audio.put(processed_audio_data)
                 # Run fresh transcriber thread
                 if (self.__transcriber_thread.is_alive() and self.__transcriber_thread.native_id == None):
                     self.__transcriber_thread.start()
