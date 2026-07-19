@@ -73,16 +73,14 @@ class Transcribe:
         self.__capture_audio = True
         self.__audio_stream.start_stream()
         # re-create the audio capture thread if it has completed
-        if (not self.__audio_capture_thread.is_alive()):
-            self.__audio_capture_thread = threading.Thread(target=self.__producer_thread)
-            self.__audio_capture_thread.start()
-            self.__print('Creating new producer thread')
-
+        self.__audio_capture_thread = threading.Thread(target=self.__producer_thread)
+        self.__audio_capture_thread.start()
+        self.__print('Creating new producer thread')
 
     # Pauses audio capture
     def pause(self):
         self.__capture_audio = False
-        # Bring thread to foreground for completion. 
+        # Bring thread to foreground for completion.
         self.__audio_capture_thread.join()
         self.__audio_stream.stop_stream()
 
