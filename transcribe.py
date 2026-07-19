@@ -97,7 +97,6 @@ class Transcribe:
     # Processes audio stream by detecting any speech, sanatizing any extra audio silence
     # And determining when to save the audio stream data into a clip to be transcribed.
     def __process_audio_sream(self):
-
         # Determnies whether to save audio data into transcriber queue
         should_save_audio_data = False
         # Read 30ms of raw audio data
