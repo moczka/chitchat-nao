@@ -7,8 +7,9 @@ from transcribe import Transcribe
 from language_model import send_message
 
 def main():
+
     # Set up transcribing tool
-    transcriber = Transcribe()
+    transcriber = Transcribe(debug_on=True)
     # Prompt user
     print('Listening... Ask Pazuzu anything.')
     # Queue with user prompts
