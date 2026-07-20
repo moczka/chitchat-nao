@@ -1,1 +1,10 @@
+# language model file
 *.gguf
+
+# Python-generated files
+__pycache__/
+*.py[cod]
+.venv/
+
+# for local libraries (for NAO)
+.local/
