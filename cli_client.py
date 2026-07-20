@@ -8,6 +8,7 @@
 import pyaudio
 import threading
 import requests
+import queue
 
 NB_CHANNELS = 1 # Mono audio (single channel)
 RATE = 16000
@@ -19,6 +20,7 @@ capture_audio = False
 # Global instances
 audio = pyaudio.PyAudio()
 audio_stream = None
+transcriptions = queue.Queue()
 
 def main():
     global audio, audio_stream, capture_audio
@@ -35,6 +37,10 @@ def main():
     audio_capture_thread = threading.Thread(target=audio_producer)
     audio_capture_thread.start()
 
+    while True:
+         if not transcriptions.empty():
+            print(transcriptions.get())
+
 
 def audio_producer():
     global capture_audio, audio_stream
@@ -49,8 +55,7 @@ def audio_producer():
             result = response.json()
             # Print out transcription
             if result["ready"]:
-                 capture_audio = False
-                 print(result["text"])
+                transcriptions.put(result['text'])
 
 
 if __name__=="__main__":
