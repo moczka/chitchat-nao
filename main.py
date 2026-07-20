@@ -6,11 +6,10 @@
 from transcribe import Transcribe
 from language_model import send_message
 
-WHISPER_MODEL = "base.en"
-
 def main():
+
     # Set up transcribing tool
-    transcriber = Transcribe(model_name=WHISPER_MODEL, debug_on=True)
+    transcriber = Transcribe(debug_on=True)
     # Prompt user
     print('Listening... Ask Pazuzu anything.')
     # Queue with user prompts
