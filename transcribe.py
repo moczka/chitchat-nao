@@ -11,6 +11,7 @@ import numpy as np
 import queue
 import threading
 
+MODEL_TYPE = "base.en"
 NB_CHANNELS = 1 # Mono audio (single channel)
 RATE = 16000
 CHUNK = 480 # To generate 30ms audio frames
@@ -20,11 +21,13 @@ SILENCE_LENGTH = 33
 SPEECH_MIN_LENGTH = 20
 
 class Transcribe:
-    def __init__(self, model_name="base.en", debug_on=False):
+    def __init__(self, debug_on=False):
         # Controls whether or not we print out debugging messages
         self.__debug_on = debug_on
         # Controls whether audio should be captured from the stream
         self.__capture_audio = True
+        # Reference to audio data collected from audio stream
+        self.__audio_data = b""
         # Reference to audio stream & producer
         self.__audio_stream = None
         self.__audio_producer = None
@@ -42,7 +45,7 @@ class Transcribe:
         # Download model
         self.__print('Downloading Whisper model...')
         try:
-            self.__model = WhisperModel(model_name, device="cpu", compute_type="int8")
+            self.__model = WhisperModel(MODEL_TYPE, device="cpu", compute_type="int8")
             self.__print('Whisper model downloaded successfully!')
         except:
             self.__print('Failed to download Whisper model.')
@@ -148,18 +151,13 @@ class Transcribe:
     
     # Processes the audio stream and creates audio clips to be transcribed later
     def __producer_thread(self):
-        
-        self.__print("Microphone initialized, recording started...")
-        # Reference to audio data collected from audio stream
-        audio_data = b""
 
         while self.__capture_audio:
-
             # Read 30ms of raw audio data from stream
             chunk = self.__audio_stream.read(CHUNK)
-            should_save_audio, processed_audio_data = self.__process_audio_data(audio_data, chunk)
+            should_save_audio, processed_audio_data = self.__process_audio_data(self.__audio_data, chunk)
             # Update current audio data
-            audio_data = processed_audio_data
+            self.__audio_data = processed_audio_data
 
             if should_save_audio:
                 self.__print('Saving into audio queue...')
