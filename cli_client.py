@@ -9,6 +9,7 @@ import pyaudio
 import threading
 import requests
 import queue
+import time
 
 NB_CHANNELS = 1 # Mono audio (single channel)
 RATE = 16000
@@ -37,9 +38,9 @@ def main():
     audio_capture_thread = threading.Thread(target=audio_producer)
     audio_capture_thread.start()
 
-    while True:
-         if not transcriptions.empty():
-            print(transcriptions.get())
+    # while True:
+    #      if not transcriptions.empty():
+    #         print(transcriptions.get())
 
 
 def audio_producer():
@@ -53,9 +54,15 @@ def audio_producer():
                  'Content-Type': 'application/octet-stream'
             })
             result = response.json()
-            # Print out transcription
+            # Print out response
             if result["ready"]:
-                transcriptions.put(result['text'])
+                print(f"User: {result['user']}\n")
+                print(f"Robot: {result['robot']}")
+                audio_stream.stop_stream()
+                time.sleep(1)
+                audio_stream.start_stream()
+
+
 
 
 if __name__=="__main__":
