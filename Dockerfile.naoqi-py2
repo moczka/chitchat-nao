@@ -1,0 +1,13 @@
+FROM python:2.7.18-buster
+
+WORKDIR /work
+
+COPY .local/pynaoqi-extracted/pynaoqi-python2.7-* /opt/pynaoqi/
+
+ENV PYTHONPATH=/opt/pynaoqi/lib/python2.7/site-packages
+ENV LD_LIBRARY_PATH=/usr/local/lib:/opt/pynaoqi/lib:/opt/pynaoqi/lib/python2.7/site-packages
+ENV LD_PRELOAD=/usr/local/lib/libpython2.7.so.1.0
+
+RUN python2 -c "import ctypes; print('ctypes import ok')"
+
+CMD ["python2", "/work/say_nao_py2.py"]
