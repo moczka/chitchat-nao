@@ -103,9 +103,9 @@ class Transcribe:
         return self.__transcribed_audio
     
     # Transcribe incoming audio frame (chunk)
-    def transcribe(self, audio_data, chunk):
+    def transcribe(self, chunk):
          
-        should_save_audio, processed_audio_data = self.__process_audio_data(audio_data, chunk)
+        should_save_audio, processed_audio_data = self.__process_audio_data(self.__audio_data, chunk)
         # Update current audio data
         self.__audio_data = processed_audio_data
         if should_save_audio:
