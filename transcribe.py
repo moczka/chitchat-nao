@@ -22,7 +22,7 @@ SPEECH_MIN_LENGTH = 20
 
 class Transcribe:
     def __init__(self, server_mode=False, debug_on=False):
-        # Server mode does not use local microphone
+        # Server mode will not make use of local microphone hardware
         self.__server_mode = server_mode
         # Controls whether or not we print out debugging messages
         self.__debug_on = debug_on
@@ -48,7 +48,7 @@ class Transcribe:
         self.__print('Downloading Whisper model...')
         try:
             self.__model = WhisperModel(MODEL_TYPE, device="cpu", compute_type="int8")
-            print('Whisper model downloaded successfully!')
+            self.__print('Whisper model downloaded successfully!')
         except:
             print('Failed to download Whisper model.')
 
@@ -175,11 +175,8 @@ class Transcribe:
     
     # Processes the audio stream and creates audio clips to be transcribed later
     def __producer_thread(self):
-        
-        self.__print("Microphone initialized, recording started...")
 
         while self.__capture_audio:
-
             # Read 30ms of raw audio data from stream
             chunk = self.__audio_stream.read(CHUNK)
             should_save_audio, processed_audio_data = self.__process_audio_data(self.__audio_data, chunk)
