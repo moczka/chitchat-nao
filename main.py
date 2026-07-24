@@ -6,31 +6,31 @@
 from transcribe import Transcribe
 from language_model import send_message
 
+transcriber = None
+
 def main():
+    global transcriber
 
-    # Set up transcribing tool
-    transcriber = Transcribe(debug_on=True)
-    # Prompt user
-    print('Listening... Ask Pazuzu anything.')
-    # Queue with user prompts
-    user_prompts = transcriber.get_transcriptions()
+    try:
+        # Set up transcribing tool
+        transcriber = Transcribe(callback=process_prompt)
+        # Prompt user
+        print('Listening... Ask Pazuzu anything.')
+    except KeyboardInterrupt:
+        print('Exiting...')
 
-    while True:
-        try:
-            if (not user_prompts.empty()):
-                user_prompt = user_prompts.get()
-                print(f"User: {user_prompt}")
-                print('\nThinking...\n')
-                # Stop capturing audio while SLM generates an answer
-                transcriber.pause()
-                robot_resp = send_message(user_prompt)
-                print(f"\nRobot: {robot_resp}\n")
-                # Re-enable transcriber
-                transcriber.proceed()
-        except KeyboardInterrupt:
-            print('Exiting...')
-            return 0
+    return 0
 
+
+def process_prompt(user_prompt):
+    print(f"User: {user_prompt}")
+    print('\nThinking...\n')
+    # Stop capturing audio while SLM generates an answer
+    transcriber.pause()
+    robot_resp = send_message(user_prompt)
+    print(f"\nRobot: {robot_resp}\n")
+    # Re-enable transcriber
+    transcriber.proceed()
 
 
 if __name__ == "__main__":

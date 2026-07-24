@@ -38,10 +38,6 @@ def main():
     audio_capture_thread = threading.Thread(target=audio_producer)
     audio_capture_thread.start()
 
-    # while True:
-    #      if not transcriptions.empty():
-    #         print(transcriptions.get())
-
 
 def audio_producer():
     global capture_audio, audio_stream
@@ -55,14 +51,18 @@ def audio_producer():
             })
             result = response.json()
             # Print out response
-            if result["ready"]:
-                print(f"User: {result['user']}\n")
-                print(f"Robot: {result['robot']}")
+            if result['status'] == "thinking":
+                print('\nThinking..\n')
                 audio_stream.stop_stream()
                 time.sleep(1)
                 audio_stream.start_stream()
-
-
+            # Print out conversation
+            if result['user'] != "":
+                 print(f"User: {result['user']}\n")
+            if result['robot'] != "":
+                print(f"Robot: {result['robot']}\n")
+                # Simulate time it takes for robot to speak (and users to read response)
+                time.sleep(0.5)
 
 
 if __name__=="__main__":

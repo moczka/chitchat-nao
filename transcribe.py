@@ -21,7 +21,7 @@ SILENCE_LENGTH = 33
 SPEECH_MIN_LENGTH = 20
 
 class Transcribe:
-    def __init__(self, server_mode=False, debug_on=False):
+    def __init__(self, callback=lambda message: message, server_mode=False, debug_on=False):
         # Server mode will not make use of local microphone hardware
         self.__server_mode = server_mode
         # Controls whether or not we print out debugging messages
@@ -44,6 +44,8 @@ class Transcribe:
         self.__pending_audio = queue.Queue()
         # Stores transcribed audio clips
         self.__transcribed_audio = queue.Queue()
+        # Callback function to call with message that has been transcribed.
+        self.__cb = callback
         # Download and setup Whisper transcriber model
         self.__print('Downloading Whisper model...')
         try:
@@ -171,6 +173,8 @@ class Transcribe:
             # Place transcribed audio into queue
             if (user_message != ""):
                 self.__transcribed_audio.put(user_message)
+                # Pass transcribed message to callback
+                self.__cb(user_message)
         self.__print("Consumer thread ended.")
     
     # Processes the audio stream and creates audio clips to be transcribed later

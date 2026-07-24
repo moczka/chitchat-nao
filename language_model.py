@@ -8,10 +8,10 @@ Sets up the small language model
 from llama_cpp import Llama
 
 MODEL_PATH="./models/SmolLM2-1.7B-Instruct-Q4_K_M.gguf"
-
 # Initialize the model
 llm = Llama(
     model_path=MODEL_PATH,
+    n_gpu_layers=0,
     n_ctx=8192,  # Context window size
     n_threads=10, # Adjust based on your CPU cores
     n_batch=1024, # Increase available memory 
