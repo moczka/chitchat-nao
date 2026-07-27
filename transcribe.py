@@ -21,7 +21,7 @@ SILENCE_LENGTH = 33
 SPEECH_MIN_LENGTH = 20
 
 class Transcribe:
-    def __init__(self, debug_on=False):
+    def __init__(self, on_transcription_complete=lambda txt : txt, debug_on=False):
         # Controls whether or not we print out debugging messages
         self.__debug_on = debug_on
         # Controls whether audio should be captured from the stream
@@ -40,8 +40,8 @@ class Transcribe:
         self.__vad.set_mode(3)
         # Stores the audio clips to be transcribed
         self.__pending_audio = queue.Queue()
-        # Stores transcribed audio clips
-        self.__transcribed_audio = queue.Queue()
+        # Callback function that receives completed transcription
+        self.__on_transcription_complete = on_transcription_complete
         # Download model
         self.__print('Downloading Whisper model...')
         try:
@@ -90,11 +90,7 @@ class Transcribe:
         # Bring thread to foreground for completion.
         self.__audio_capture_thread.join()
         self.__audio_stream.stop_stream()
-
-    # Returns the queue with transcribed audio
-    def get_transcriptions(self):
-        return self.__transcribed_audio
-    
+        
     # Processes audio stream by detecting any speech, sanatizing any extra audio silence
     # And determining when to save the audio stream data into a clip to be transcribed.
     def __process_audio_data(self, audio_data, chunk):
@@ -138,15 +134,15 @@ class Transcribe:
             # Convert raw audio byte data into numpy array for model
             audio_clip: np.ndarray = np.frombuffer(self.__pending_audio.get(), np.int16).astype(np.float32) / 255.0
             # Transcribe text
-            segments, info = self.__model.transcribe(audio_clip, language="en", beam_size=5)
+            segments = self.__model.transcribe(audio_clip, language="en", beam_size=5)
             # https://medium.com/@venn5708/two-important-libraries-used-for-audio-processing-and-streaming-in-python-d3b718a75904
-            user_message = ""
+            transcription = ""
             for segment in segments:
                 self.__print("[%.2fs -> %.2fs] %s" % (segment.start, segment.end, segment.text))
-                user_message += segment.text
+                transcription += segment.text
             # Place transcribed audio into queue
-            if (user_message != ""):
-                self.__transcribed_audio.put(user_message)
+            if (transcription != ""):
+                self.__on_transcription_complete(transcription)
         self.__print("Consumer thread ended.")
     
     # Processes the audio stream and creates audio clips to be transcribed later
