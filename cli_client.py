@@ -26,6 +26,7 @@ transcriptions = queue.Queue()
 def main():
     global audio, audio_stream, capture_audio
     # Set up PyAudio to capture audio from microphone
+    # TO-DO: Update to 100-250ms latency chunks to reduce CPU loads
     audio_stream = audio.open(
         format=pyaudio.paInt16,
         channels=NB_CHANNELS,
@@ -61,7 +62,7 @@ def audio_producer():
                  print(f"User: {result['user']}\n")
             if result['robot'] != "":
                 print(f"Robot: {result['robot']}\n")
-                # Simulate time it takes for robot to speak (and users to read response)
+                # Simulate time it takes for robot to speak (or for users to read response)
                 time.sleep(0.5)
 
 

@@ -7,8 +7,6 @@
 from transcribe import Transcribe
 from language_model import send_message
 import queue
-import threading
-import asyncio
 import uvicorn
 from fastapi import FastAPI, Request
 
