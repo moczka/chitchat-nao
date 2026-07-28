@@ -17,7 +17,7 @@ RATE = 16000
 CHUNK = 480 # To generate 30ms audio frames
 # Each audio frame is 30ms long so 30ms * 33 =  990ms roughly a second of silence
 SILENCE_LENGTH = 33
-# Minimum number of frames containing speech.
+# Minimum number of audio chunks containing speech.
 SPEECH_MIN_LENGTH = 20
 
 class Transcribe:
@@ -34,7 +34,7 @@ class Transcribe:
         # State variables used to process audio stream
         self.__has_spoken = False
         self.__continued_silence_count = 0
-        self.__speech_frames_count = 0
+        self.__chunks_with_speech_count = 0
         # Create instance of Voice Activated Detection (VAD) utility
         self.__vad = webrtcvad.Vad()
         self.__vad.set_mode(3)
@@ -106,7 +106,7 @@ class Transcribe:
                 self.__has_spoken = True
                 # Removes any previous silence
                 audio_data = chunk
-            self.__speech_frames_count += 1
+            self.__chunks_with_speech_count += 1
             # Reset silence counter since speech was detected
             self.__continued_silence_count = 0
         else:
@@ -116,11 +116,11 @@ class Transcribe:
         # Close off audio clip after silence is detected
         if (self.__has_spoken and self.__continued_silence_count >= SILENCE_LENGTH):
             # Only save audio clips with meaningful speech 
-            if (self.__speech_frames_count >= SPEECH_MIN_LENGTH):
+            if (self.__chunks_with_speech_count >= SPEECH_MIN_LENGTH):
                 should_save_audio_data = True
             # Reset counters
             self.__continued_silence_count = 0
-            self.__speech_frames_count = 0
+            self.__chunks_with_speech_count = 0
             # Reset speech detection flag
             self.__has_spoken = False
 
@@ -134,7 +134,7 @@ class Transcribe:
             # Convert raw audio byte data into numpy array for model
             audio_clip: np.ndarray = np.frombuffer(self.__pending_audio.get(), np.int16).astype(np.float32) / 255.0
             # Transcribe text
-            segments = self.__model.transcribe(audio_clip, language="en", beam_size=5)
+            segments, info = self.__model.transcribe(audio_clip, language="en", beam_size=5)
             # https://medium.com/@venn5708/two-important-libraries-used-for-audio-processing-and-streaming-in-python-d3b718a75904
             transcription = ""
             for segment in segments:
