@@ -14,8 +14,8 @@ import threading
 MODEL_TYPE = "base.en"
 NB_CHANNELS = 1 # Mono audio (single channel)
 RATE = 16000
-CHUNK = 480 # To generate 30ms audio frames
-# Each audio frame is 30ms long so 30ms * 33 =  990ms roughly a second of silence
+CHUNK = 480 # To generate 30ms audio chunks which WebRTC VAD method is trained on.
+# Each audio chunk is 30ms long so 30ms * 33 =  990ms roughly a second of silence
 SILENCE_LENGTH = 33
 # Minimum number of audio chunks containing speech.
 SPEECH_MIN_LENGTH = 20
@@ -90,7 +90,7 @@ class Transcribe:
         # Bring thread to foreground for completion.
         self.__audio_capture_thread.join()
         self.__audio_stream.stop_stream()
-        
+
     # Processes audio stream by detecting any speech, sanatizing any extra audio silence
     # And determining when to save the audio stream data into a clip to be transcribed.
     def __process_audio_data(self, audio_data, chunk):
