@@ -11,6 +11,8 @@ include_directories(${NAOQI_SDK_DIR}/include)
 find_package(Threads REQUIRED)
 # Reference the SDK precompiled libraries explicitlly
 link_directories(${NAOQI_SDK_DIR}/lib)
+# Change to "add_library" to generate a .so file for the module to run on the NAO6 Robot
+
 add_executable(nao6_local_module main.cpp)
 # Link against the key core NAOqi components inside SDK folder
 target_link_libraries(nao6_local_module 
