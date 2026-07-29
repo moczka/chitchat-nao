@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.23)
 project(nao6_local_module CXX)
 set(CMAKE_CXX_STANDARD 17)
+# Update PATH to SDK where located on your computer.
 set(NAOQI_SDK_DIR "/home/steven/Documents/NAO6-development/naoqi-sdk-2.8.5.10-linux64")
 # FIX: Force the compiler to use the legacy C++ string ABI to match the SDK pre-compiled binaries
 add_compile_definitions(_GLIBCXX_USE_CXX11_ABI=0)
