@@ -1,0 +1,97 @@
+[
+  {
+    "question": "Who can join the Computer Club?",
+    "category": "answerable",
+    "relevant_chunk_ids": [
+      "chunk-a536907c5adc5ffab55bb08000dcdc403e45574c555d773571de2fcdafdf6924"
+    ],
+    "expected_answer_contains": [
+      "Anyone!",
+      "Quincy College student"
+    ]
+  },
+  {
+    "question": "Which students are eligible to join?",
+    "category": "answerable",
+    "relevant_chunk_ids": [
+      "chunk-a536907c5adc5ffab55bb08000dcdc403e45574c555d773571de2fcdafdf6924"
+    ],
+    "expected_answer_contains": ["Quincy College student", "alumni may join"]
+  },
+  {
+    "question": "What college has the Computer Club?",
+    "category": "answerable",
+    "relevant_chunk_ids": [
+      "chunk-d53f643ac965e155b1688ef3dc6bcf33dca055322dee3310e310ca87fd6f2de7"
+    ],
+    "expected_answer_contains": ["Computer Club at Quincy College"]
+  },
+  {
+    "question": "Who is the faculty advisor?",
+    "category": "answerable",
+    "relevant_chunk_ids": [
+      "chunk-d53f643ac965e155b1688ef3dc6bcf33dca055322dee3310e310ca87fd6f2de7"
+    ],
+    "expected_answer_contains": ["Computer Club at Quincy College", "Faculty Advisor"]
+  },
+  {
+    "question": "Who advises the Computer Club?",
+    "category": "answerable",
+    "relevant_chunk_ids": [
+      "chunk-d53f643ac965e155b1688ef3dc6bcf33dca055322dee3310e310ca87fd6f2de7"
+    ],
+    "expected_answer_contains": ["Faculty Advisor"]
+  },
+  {
+    "question": "Who is the president?",
+    "category": "answerable",
+    "relevant_chunk_ids": [
+      "chunk-564c8ebc9fe9c4eb37d9ac4276f87e08dc2e376e2366afde6305bd446294641d"
+    ],
+    "expected_answer_contains": ["President", "directs Computer Club"]
+  },
+  {
+    "question": "Who leads the Computer Club as president?",
+    "category": "answerable",
+    "relevant_chunk_ids": [
+      "chunk-564c8ebc9fe9c4eb37d9ac4276f87e08dc2e376e2366afde6305bd446294641d"
+    ],
+    "expected_answer_contains": ["directs Computer Club"]
+  },
+  {
+    "question": "Who is the vice president?",
+    "category": "answerable",
+    "relevant_chunk_ids": [
+      "chunk-c11b904c7fa3b24c1c9b67915661cbcc5df49addc187d2fe80a57ebca47835a1"
+    ],
+    "expected_answer_contains": ["Vice President", "Helps the President"]
+  },
+  {
+    "question": "Who manages club finances?",
+    "category": "answerable",
+    "relevant_chunk_ids": [
+      "chunk-7173c2a345b7b63a9fa96567a822a2e56461be89f60b8c13a038f382d3e5f166"
+    ],
+    "expected_answer_contains": ["Treasurer", "Manages club finances"]
+  },
+  {
+    "question": "Who keeps club records and meeting notes?",
+    "category": "answerable",
+    "relevant_chunk_ids": [
+      "chunk-1eaf3356c0e59c35950e7c3e8d7e645335392e4e63a54face48f1334435b6434"
+    ],
+    "expected_answer_contains": ["Secretary", "Keeps club records and meeting notes"]
+  },
+  {
+    "question": "Does the club publish a membership fee?",
+    "category": "unanswered"
+  },
+  {
+    "question": "Does the club offer programming internships?",
+    "category": "unanswered"
+  },
+  {
+    "question": "Who leads the club?",
+    "category": "ambiguous"
+  }
+]
