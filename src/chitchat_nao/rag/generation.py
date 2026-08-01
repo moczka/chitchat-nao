@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from .models import RetrievedContext
+from .models import ResponseMode, RetrievedContext
 
 DEFAULT_MODEL_PATH = (
     Path.home()
@@ -16,6 +16,18 @@ DEFAULT_MODEL_PATH = (
 class GenerationRequest:
     question: str
     contexts: list[RetrievedContext]
+    response_mode: ResponseMode = ResponseMode.ANSWER
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.response_mode, ResponseMode):
+            object.__setattr__(
+                self, "response_mode", ResponseMode(self.response_mode)
+            )
+
+    @property
+    def mode(self) -> ResponseMode:
+        """Short compatibility name for the response mode."""
+        return self.response_mode
 
 
 class LocalLlamaCppGenerator:
@@ -54,25 +66,39 @@ class LocalLlamaCppGenerator:
             f"[S{position}] {context.text}"
             for position, context in enumerate(request.contexts, start=1)
         )
+        if request.response_mode is ResponseMode.CLARIFY:
+            instruction = (
+                "Ask one concise clarifying question using only the supplied "
+                "context. Do not answer the question or add facts not present "
+                "in the context."
+            )
+        else:
+            instruction = (
+                "Provide exactly one concise, speech-ready answer to the "
+                "question using only the supplied context. Base it only on "
+                "the supplied context. Do not add "
+                "information that is not present in the context."
+            )
         return (
             "<context>\n"
             f"{context_lines}\n"
             "</context>\n"
-            "Answer the question using only the supplied context.\n"
-            "Include at least one citation in your answer. "
-            "Use one or more exact source labels in the form [S<n>], "
-            "such as [S1]. Only cite labels present in the supplied context. "
-            "Do not use canonical chunk IDs or any other citation format.\n"
+            f"{instruction}\n"
             f"Question: {request.question}"
         )
 
     def generate(self, request: GenerationRequest) -> str:
         model = self._load_model()
+        system_message = (
+            "You ask concise clarifying questions from retrieved context."
+            if request.response_mode is ResponseMode.CLARIFY
+            else "You answer questions from retrieved context."
+        )
         response = model.create_chat_completion(  # type: ignore[attr-defined]
             messages=[
                 {
                     "role": "system",
-                    "content": "You answer questions from retrieved context.",
+                    "content": system_message,
                 },
                 {"role": "user", "content": self._prompt(request)},
             ],

@@ -6,25 +6,28 @@ Start with [`overview.md`](overview.md) if you want the shorter conceptual expla
 
 ## Source-of-truth boundaries
 
-The current RAG system has four related kinds of files:
+The current RAG system has five related kinds of files:
 
 1. **Knowledge sources** under `knowledge_base/` — the club facts that can be retrieved.
-2. **Pipeline code** under `src/chitchat_nao/rag/` — ingestion, embeddings, retrieval, generation, and CLI/evaluation orchestration.
+2. **Pipeline code** under `src/chitchat_nao/rag/` — ingestion, embeddings, retrieval, routing, generation, and CLI/evaluation orchestration.
 3. **Evaluation labels** in `src/chitchat_nao/rag/eval_corpus.json` — questions and gold chunk IDs used to measure retrieval.
 4. **Tests** under `tests/` — deterministic checks of the pipeline mechanics.
+5. **Synthetic fixtures** under `tests/fixtures/` — isolated fake Markdown corpora and fake scenarios used only by tests.
 
 The knowledge sources and evaluation labels are tightly coupled through deterministic chunk IDs. Treat changes to them as one review unit.
+
+The synthetic fixtures must stay separate from the production KB and from the real evaluation metrics. They use clearly fake content (`synthetic://` source paths, `synthetic_*.md` filenames) so that a mistake can never be mistaken for a real club fact or inflate the real corpus evaluation.
 
 ## Module map
 
 | File | Responsibility | Input | Output |
 |---|---|---|---|
-| `models.py` | Shared immutable data contracts | Field values | `DocumentChunk`, `RetrievedContext` |
+| `models.py` | Shared immutable data contracts | Field values | `DocumentChunk`, `RetrievedContext`, `AskResult`, `ResponseMode` |
 | `ingest.py` | Parse Markdown into chunks | One Markdown path | `list[DocumentChunk]` |
 | `embedding.py` | Convert text to normalized vectors | Text list | NumPy array |
 | `retrieval.py` | Rank chunks by cosine similarity | Chunks and question | `list[RetrievedContext]` |
-| `generation.py` | Ask local GGUF model for text | Question and contexts | Answer string |
-| `assistant.py` | User-facing pipeline CLI | CLI arguments | Answer/fallback and diagnostics |
+| `generation.py` | Ask local GGUF model for text | Question, selected contexts, response mode | Answer string |
+| `assistant.py` | `ask()` routing policy, speech cleanup, diagnostics, CLI | Question and factories | `AskResult` |
 | `evaluator.py` | Load KB and score retrieval | KB, eval corpus, questions | Reports or inspection output |
 | `eval_corpus.json` | Retrieval labels | Questions and gold IDs | Input to evaluator |
 
@@ -36,8 +39,10 @@ Markdown files
   -> normalized chunk embeddings
   -> Retriever.search(question)
   -> RetrievedContext
-  -> GenerationRequest
-  -> local model answer
+  -> ask() routing decision (ANSWER / CLARIFY / REDIRECT / ERROR)
+  -> GenerationRequest (only for ANSWER and CLARIFY)
+  -> local model output -> cleaned speech text
+  -> AskResult
 ```
 
 ## How ingestion works
@@ -71,7 +76,7 @@ creates two text chunks under the `Officers` section.
 
 ### Chunk identity
 
-The chunk’s `content_hash` is the SHA-256 hash of the chunk text. The canonical chunk ID is another SHA-256 hash over:
+The chunk's `content_hash` is the SHA-256 hash of the chunk text. The canonical chunk ID is another SHA-256 hash over:
 
 ```text
 relative source path
@@ -99,7 +104,7 @@ If any of those happen, existing gold IDs in `eval_corpus.json` may no longer ex
 1. resolves the KB root;
 2. finds all `**/*.md` files;
 3. sorts paths deterministically;
-4. passes each file’s POSIX path relative to the KB root into `ingest_markdown()`.
+4. passes each file's POSIX path relative to the KB root into `ingest_markdown()`.
 
 For the active root, `officers.md` is used as the source identity rather than an absolute machine-specific path. This is why the same KB can produce the same IDs from different current working directories.
 
@@ -140,11 +145,11 @@ When `Retriever` is constructed, it embeds every chunk once. On each search it e
 
 `generation.py` defines:
 
-- `GenerationRequest(question, contexts)`;
+- `GenerationRequest(question, contexts, response_mode)`;
 - `LocalLlamaCppGenerator`;
 - the default local GGUF path.
 
-The generator validates that the GGUF file exists, but does not construct the model until the first call to `generate()`. It then caches the loaded model. Tests inject a fake factory to observe loading and generation parameters without loading a real model.
+The generator validates that the GGUF file exists, but does not construct the model until the first call to `generate()`. It then caches the loaded model. Tests inject a fake Llama factory to observe loading and generation parameters without loading a real model.
 
 The prompt includes context labels in retrieval order:
 
@@ -153,49 +158,84 @@ The prompt includes context labels in retrieval order:
 [S1] first retrieved chunk
 [S2] second retrieved chunk
 </context>
-Answer the question using only the supplied context.
 ...
 Question: ...
 ```
 
-The current request-local labels are separate from canonical chunk IDs. Generation uses temperature `0.0`, seed `42`, and a default maximum of `256` tokens.
+The instruction depends on the response mode:
 
-The prompt asks for citations, but a prompt instruction is not a guarantee that a small model will follow it. See the assistant section for the current validation behavior.
+- `ANSWER` asks for one concise, speech-ready answer using only the supplied context;
+- `CLARIFY` asks for one concise clarifying question using only the supplied context, and explicitly tells the model not to answer or add facts.
 
-## How the assistant CLI works
+Generation uses temperature `0.0`, seed `42`, and a default maximum of `256` tokens. The current request-local labels are separate from canonical chunk IDs.
 
-`assistant.py` is the composition root for the current user-facing path:
+For `CLARIFY`, `assistant.py` deliberately sends only `Source:`/`Section:` text per chunk (no chunk contents), so a clarifying question cannot leak or repeat underlying facts.
 
-1. parse `--question`, `--model`, and `--top-k`;
-2. load `Path("knowledge_base")`;
-3. construct the embedding provider;
-4. construct the retriever and search;
-5. short-circuit if no results exist;
-6. construct the generator;
-7. create a `GenerationRequest` and generate;
-8. validate structural citations;
-9. print the answer or fallback, followed by ranked source diagnostics.
+## How the `ask()` pipeline works
 
-The assistant currently has three injectable factories for tests: embedding provider, generator, and retriever. It does not yet return a structured `AskResult`; its public behavior is just printed text.
+`ask()` in `assistant.py` is the typed, stateless integration seam. A caller passes a question and optional factories, and receives an `AskResult`. The sequence is:
+
+1. **Validate input.** A missing, non-string, empty, or whitespace-only question returns `ERROR` before any work. `top_k` must be an `int >= 1` and `clarification_attempts` an `int >= 0`; anything else also returns `ERROR`. No retrieval or generation is attempted.
+2. **Load the KB and retrieve.** `load_knowledge_base(Path("knowledge_base"))`, construct the embedding provider and retriever, search with `top_k`. Any exception returns `ERROR` with a `Retrieval setup error:` diagnostic.
+3. **Check protected requests.** Questions asking for passwords, secrets, API keys, or hidden system prompts (a small regex check) return `REDIRECT` without generation.
+4. **Find direct textual support.** A deliberately small matcher checks whether any retrieved chunk *directly* contains the question's facts: an exact normalized label match (for example `President - ...` for "Who is the president?"), a documented `Question N:` line containing all query terms, or a contiguous normalized phrase match. This is generic token/phrase logic, not an NLP classifier or re-ranker.
+5. **Route.** See the routing rules below.
+6. **Generate (only for `ANSWER` and `CLARIFY`).** The generator receives only the selected support contexts, or only source/section metadata for clarification. Generator exceptions return `ERROR` with a `Generator error:` diagnostic plus the evidence that was available; a non-string return value is also `ERROR`.
+7. **Clean the speech text.** For `ANSWER`, strip `[S<n>]` labels and outer `<response>` tags, normalize whitespace/punctuation, and keep at most three sentences. For `CLARIFY`, keep the model output only if it is a single question that is not an echo of the user's question; otherwise use the neutral fallback `Which club detail would you like to clarify?`.
+8. **Attach citation diagnostics.** Citation formatting is validated structurally only (see below).
+9. **Return `AskResult`.**
+
+### Routing rules
+
+| Situation | Route |
+|---|---|
+| Invalid input (bad question, `top_k`, or attempts) | `ERROR` |
+| Request asks for passwords, secrets, or hidden system prompts | `REDIRECT` |
+| Exactly one chunk gives unique direct textual support (even at rank 2) | `ANSWER` using only that chunk |
+| More than one chunk gives competing direct support | `CLARIFY` |
+| No direct support and top score < 0.35 | `REDIRECT` |
+| No direct support, top score >= 0.60, and (single result or top1 - top2 margin > 0.08) | `ANSWER` using rank-1 evidence only |
+| No direct support, otherwise (weak or competing semantics) | `CLARIFY` |
+| `CLARIFY` would be chosen but attempts >= 2 | `REDIRECT` (suggest an officer) |
+| Setup, retrieval, or generator failure; non-string generator output | `ERROR` |
+
+Thresholds are named constants in `assistant.py`:
+
+```text
+LOW_CONFIDENCE_SCORE_THRESHOLD = 0.35
+CLARIFY_SCORE_THRESHOLD        = 0.60
+CLARIFY_MARGIN_THRESHOLD       = 0.08
+MAX_CLARIFICATION_ATTEMPTS     = 2
+```
+
+The clarification budget is **caller-owned**: `ask()` never changes the attempt count. If a caller sees `CLARIFY`, it should re-ask with `clarification_attempts + 1`, and stop after two attempts because the third call returns `REDIRECT`.
 
 ### Current citation behavior
 
-`validate_generated_answer()` accepts only exact labels corresponding to current retrieval positions: `[S1]`, `[S2]`, and so on. It rejects:
+`validate_generated_answer()` checks only structure: are all bracketed citations exact current-result labels such as `[S1]`/`[S2]`? It rejects no citation, lowercase labels, leading-zero labels, out-of-range labels, canonical chunk hashes, and unmatched brackets. This result is **diagnostic-only**:
 
-- no bracketed citation;
-- lowercase labels such as `[s1]`;
-- leading-zero labels such as `[S01]`;
-- labels outside the result range;
-- canonical chunk hashes or other arbitrary bracketed content;
-- unmatched brackets.
+- the answer is never withheld for citation-formatting problems;
+- `AskResult.provenance_verified` is always `False`;
+- the diagnostic reads either `Citation formatting was structurally valid, but semantic grounding was not verified.` or `Citation formatting was missing or invalid; semantic grounding was not verified.`
 
-If validation fails, the answer is replaced by:
+A structurally valid label proves only that the model emitted an allowed label. It does not prove semantic support.
 
-```text
-[answer withheld: citation structural validation failed]
-```
+## The `AskResult` contract
 
-Citation enforcement, however, is deferred because the local SmolLM2 model often fails to emit accepted labels even after successful retrieval. The next task is to relax or bypass this gate while keeping source diagnostics and failure visibility. We shouldn't expand the citation parser before that decision.
+`AskResult` is a frozen dataclass:
+
+| Field | Meaning |
+|---|---|
+| `mode` | `ResponseMode` (`ANSWER`, `CLARIFY`, `REDIRECT`, `ERROR`) |
+| `spoken_text` | Speech-ready string |
+| `evidence` | Tuple of `RetrievedContext` actually selected/supplied |
+| `provenance_verified` | Always `False` in the current implementation |
+| `diagnostics` | Tuple of human-readable strings |
+| `clarification_attempts` | Echoed back from the caller |
+
+For `ANSWER`, `evidence` contains only the chunks that supported the answer (direct support, or rank-1 when answering from the semantic-score rule). For `CLARIFY` and `REDIRECT`, `evidence` contains the retrieved context. For input-validation `ERROR`, `evidence` is empty; for setup failures it is empty; for generation failures it retains whatever was retrieved.
+
+The convenience export `chitchat_nao.rag.ask()` (in `__init__.py`) lazily dispatches to `assistant.ask()`, so robot-side integration can import one function.
 
 ## Evaluation corpus
 
@@ -224,6 +264,14 @@ The loader validates the shape and category rules. The retrieval evaluator uses 
 
 The current corpus contains 10 answerable cases, two unanswered cases, and one ambiguous case. The answerable questions cover the meaningful starter chunks so that no major current fact is completely absent from retrieval evaluation.
 
+**Correction note:** the two president-related entries (`Who is the president?` and `Who leads the Computer Club as president?`) had their gold IDs corrected to the current canonical president chunk ID:
+
+```text
+chunk-472fc9f75cc6e4b5e4d44263759f8d18e9b3b1602184f63287fc2d22b02eeecc
+```
+
+Always regenerate IDs from the actual KB output instead of guessing hashes (see the update workflow).
+
 ## Retrieval metrics
 
 Metrics are calculated for answerable cases only. Unanswered and ambiguous cases appear in reports with `inspection_only=true` and do not affect aggregate retrieval scores.
@@ -236,7 +284,7 @@ The aggregate Recall@1 is the mean across answerable cases.
 
 ### Recall@2
 
-The same calculation using the first two retrieved IDs. This is currently the most important starter-corpus exit check because the assistant normally supplies two chunks to generation.
+The same calculation using the first two retrieved IDs. This is the most important starter-corpus exit check because the retriever normally returns two chunks, one of which must support the answer.
 
 ### MRR
 
@@ -264,12 +312,14 @@ The margin is a raw score difference. It is not a calibrated confidence value an
 The latest documented real SentenceTransformer run against the three-file starter KB measured:
 
 ```text
-Recall@1 = 0.700
+Recall@1 = 0.600
 Recall@2 = 1.000
-MRR      = 0.850
+MRR      = 0.800
 ```
 
 All 10 answerable cases hit a gold chunk by rank two. These numbers are retrieval results only. They do not show that the model generated a correct answer, refused an unsupported question, clarified ambiguity, or used the evidence semantically.
+
+Note that the routing policy does **not** use these gold labels: `ask()` decides from scores and direct textual matching alone. Retrieval metrics and routing behavior are evaluated separately.
 
 ## Test suite guide
 
@@ -283,7 +333,7 @@ PYTHONPATH=src uv run --no-project --isolated \
   python -m unittest discover -s tests -p 'test_*.py'
 ```
 
-The tests are intentionally independent of real model inference.
+The tests are intentionally independent of real model inference. The suite currently contains **77 tests**, and `ruff check src tests` plus `git diff --check` pass cleanly.
 
 ### `test_rag_ingestion.py`
 
@@ -295,15 +345,35 @@ Uses fixed vectors to check ordering, score and metadata propagation, and determ
 
 ### `test_rag_generation.py`
 
-Uses a fake Llama object to check prompt delimiters and labels, lazy model loading, deterministic generation arguments, and missing-model validation.
+Uses a fake Llama object to check prompt delimiters and labels, the mode-dependent instructions (`ANSWER` vs `CLARIFY`), lazy model loading, deterministic generation arguments, and missing-model validation.
 
 ### `test_rag_assistant.py`
 
-Uses fake providers, retrievers, and generators to check factory wiring, output diagnostics, empty-result short-circuiting, and the current citation-validation contract. These tests must change when the citation-gate behavior changes.
+Uses fake providers, retrievers, and generators to check CLI wiring, output ordering (speech first, then provenance/diagnostics/ranked sources), empty-result redirect behavior, the diagnostic-only citation behavior, and generator-error reporting.
+
+### `test_rag_core_contract.py`
+
+The contract test for `ask()`. Uses an isolated JSON scenario set (`tests/fixtures/synthetic_rag_scenarios.json`, 27 scenarios across categories such as direct facts, paraphrases, competing/ambiguous evidence, weak relevance, unrelated, adversarial-unanswered, and nonce-fact contrast). It checks:
+
+- `AskResult` is frozen and typed, and `ResponseMode` covers exactly the four modes;
+- the routing rules above, including rank-2 direct support, exact-label preference, competing-direct-support clarification, the >= 0.60 + margin > 0.08 semantic rule, and the < 0.35 redirect;
+- invalid input (question, `top_k`, `clarification_attempts`) returns `ERROR` without touching retrieval/generation;
+- protected requests redirect without generation;
+- clarification sends source/section-only contexts and falls back to `Which club detail would you like to clarify?` for non-questions or echoed questions;
+- the caller-managed two-attempt budget (attempts 0 and 1 clarify, attempts >= 2 redirect);
+- speech cleanup (tags/citations stripped, three-sentence cap);
+- generator exceptions and non-string generator output return `ERROR` with visible diagnostics;
+- an end-to-end policy test over the isolated Markdown corpus in `tests/fixtures/synthetic_retrieval_corpus/` using a deterministic word-overlap embedding provider.
 
 ### `test_rag_evaluation.py`
 
-Checks CWD-independent IDs, gold-ID validity, evaluation schema rules, metrics, margins, report formatting, category behavior, and starter-corpus coverage.
+Checks CWD-independent IDs, gold-ID validity, evaluation schema rules, metrics, margins, report formatting, category behavior, and starter-corpus coverage. It also verifies that the isolated synthetic retrieval corpus (`tests/fixtures/synthetic_retrieval_corpus/`) is separate from the production `knowledge_base/` and that its answerable cases all hit gold by rank two.
+
+## Synthetic test data rules
+
+- Keep all fake data under `tests/fixtures/`. The two current fixtures are `synthetic_rag_scenarios.json` (scenario contracts for `ask()`) and `synthetic_retrieval_corpus/` (Markdown + eval labels for end-to-end policy tests).
+- Use obviously fake content (`synthetic://` source paths, `synthetic_*.md` names, invented names such as Mira Vale). Never put real club facts in fixtures, and never point fixtures at `knowledge_base/`.
+- Synthetic evaluation runs in tests must never be reported as production retrieval metrics, and real KB edits must never be validated only against synthetic data.
 
 ## Safe knowledge-base update workflow
 
@@ -342,7 +412,7 @@ For every new answerable question:
 - make sure the gold chunk actually contains the expected facts;
 - ensure the question is represented by a realistic phrasing.
 
-For unanswered or ambiguous questions, omit gold IDs and expected phrases. Remember that those categories are currently inspection-only and do not make the assistant refuse or clarify automatically.
+For unanswered or ambiguous questions, omit gold IDs and expected phrases. Remember that those categories remain inspection-only for metrics, even though the `ask()` policy now has separate routing behavior (redirect/clarify) that is tested through the synthetic fixtures.
 
 ### 5. Run the full retrieval evaluation
 
@@ -350,14 +420,15 @@ For unanswered or ambiguous questions, omit gold IDs and expected phrases. Remem
 PYTHONPATH=src uv run --no-project --isolated \
   --with 'numpy>=2' \
   --with 'sentence-transformers>=5.1.2' \
-  python -m chitchat_nao.rag.evaluator
+  python -m chitchat_nao.rag.evaluator \
+  --knowledge-base knowledge_base --top-k 2
 ```
 
 Compare the result with the current baseline, and investigate any meaningful regression rather than hiding it with a threshold or top-k change.
 
 ### 6. Test the real answer path when relevant
 
-If the change affects generation or prompt context, run the assistant command from [`overview.md`](overview.md) with known, unsupported, and ambiguous questions. Retrieval passing is not enough evidence for a correct answer path.
+If the change affects generation, routing, or prompt context, run the assistant command from [`overview.md`](overview.md) with known, unsupported, and ambiguous questions. Retrieval passing is not enough evidence for a correct answer path. Remember that `.venv` may lack `sentence-transformers`; use the isolated commands.
 
 ### 7. Review the complete diff
 
@@ -375,29 +446,27 @@ Inspect source, KB, evaluation, and tests together. Never stage local GGUF files
 
 The current implementation does not include:
 
-- a structured `AskResult` contract;
-- a tested refusal policy for unsupported questions;
-- ambiguity clarification;
-- semantic answer-grounding evaluation;
-- causal nonce-corpus tests;
-- a score threshold or calibrated confidence;
+- semantic answer-grounding evaluation (citations are diagnostic-only; `provenance_verified` is always `False`);
+- a calibrated confidence model (thresholds 0.35/0.60/0.08 are heuristics);
 - a vector database or persistent index;
 - reranking;
 - FastAPI or another backend API;
-- ASR, NAO speech, or robot integration;
+- ASR, NAO speech, or robot integration (the `AskResult` contract is the intended seam);
 - conversation memory or production observability.
 
+Routing, validation, and the structured `AskResult` contract are implemented and tested; do not re-add earlier "not yet" wording for those.
 
 ## Maintenance checklist
 
 For a normal code or KB change:
 
 - [ ] Read the relevant source and tests before editing.
-- [ ] Keep the generator dependent on retrieved contexts, not direct KB access.
+- [ ] Keep the generator dependent on retrieved/selected contexts, not direct KB access.
 - [ ] Keep KB and `eval_corpus.json` changes synchronized when IDs change.
-- [ ] Run focused tests, then the full offline suite when pipeline behavior changes.
+- [ ] Keep synthetic fixtures under `tests/fixtures/`, clearly fake, and separate from production KB/metrics.
+- [ ] Run focused tests, then the full offline suite (currently 77 tests) when pipeline behavior changes.
 - [ ] Run retrieval evaluation after corpus or retrieval changes.
-- [ ] Manually inspect real CLI output after generation changes.
-- [ ] Do not claim semantic grounding from structural citations alone.
-- [ ] Keep unanswered and ambiguous behavior described as incomplete until policy tests exist.
+- [ ] Manually inspect real CLI output after generation or routing changes.
+- [ ] Do not claim semantic grounding from structural citations alone; `provenance_verified` is always `False`.
+- [ ] If routing thresholds change, update `test_rag_core_contract.py` and re-run the synthetic scenarios.
 - [ ] Inspect Git status and the full diff before staging.

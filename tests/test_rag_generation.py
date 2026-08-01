@@ -1,13 +1,14 @@
 import tempfile
 import unittest
 from pathlib import Path
+from typing import cast
 
 from chitchat_nao.rag.generation import (
     DEFAULT_MODEL_PATH,
     GenerationRequest,
     LocalLlamaCppGenerator,
 )
-from chitchat_nao.rag.models import RetrievedContext
+from chitchat_nao.rag.models import ResponseMode, RetrievedContext
 
 
 class GenerationTests(unittest.TestCase):
@@ -58,7 +59,7 @@ class GenerationTests(unittest.TestCase):
             )
 
         self.assertEqual(answer, " grounded answer ")
-        messages = captured["messages"]
+        messages = cast(list[dict[str, object]], captured["messages"])
         prompt = str(messages)
         self.assertIn("[S1] Anyone may join.", prompt)
         self.assertIn("[S2] Guests may attend events.", prompt)
@@ -66,12 +67,68 @@ class GenerationTests(unittest.TestCase):
         self.assertNotIn(first_chunk_id, prompt)
         self.assertNotIn(second_chunk_id, prompt)
         self.assertIn("Anyone may join.", prompt)
-        self.assertIn("at least one citation", prompt)
-        self.assertIn("[S<n>]", prompt)
-        self.assertIn(
-            "Only cite labels present in the supplied context", prompt
-        )
+        self.assertNotIn("include at least one citation", prompt.lower())
+        self.assertIn("one concise, speech-ready answer", prompt.lower())
+        self.assertIn("using only the supplied context", prompt.lower())
         self.assertNotIn("knowledge_base/", prompt)
+
+    def test_clarify_mode_uses_a_context_bound_clarification_prompt(
+        self,
+    ) -> None:
+        captured: dict[str, object] = {}
+
+        class FakeLlama:
+            def create_chat_completion(
+                self, **kwargs: object
+            ) -> dict[str, object]:
+                captured.update(kwargs)
+                return {"choices": [{"message": {"content": "clarification"}}]}
+
+        with tempfile.TemporaryDirectory() as directory:
+            model_path = Path(directory) / "model.gguf"
+            model_path.touch()
+            generator = LocalLlamaCppGenerator(
+                model_path, llama_factory=FakeLlama
+            )
+            response = generator.generate(
+                GenerationRequest(
+                    "Which meeting is intended?",
+                    [
+                        RetrievedContext(
+                            "chunk-" + "c" * 64,
+                            "Monday meetings are in Room 101.",
+                            "meetings.md",
+                            "Meetings",
+                            0.6,
+                            1,
+                        )
+                    ],
+                    ResponseMode.CLARIFY,
+                )
+            )
+
+        self.assertEqual(response, "clarification")
+        messages = cast(list[dict[str, object]], captured["messages"])
+        self.assertEqual(
+            messages[0],
+            {
+                "role": "system",
+                "content": (
+                    "You ask concise clarifying questions from "
+                    "retrieved context."
+                ),
+            },
+        )
+        prompt = str(messages[1]["content"])
+        self.assertIn("<context>", prompt)
+        self.assertIn("</context>", prompt)
+        self.assertIn("Monday meetings are in Room 101.", prompt)
+        self.assertIn("Ask one concise clarifying question", prompt)
+        self.assertIn("using only the supplied context", prompt)
+        self.assertIn("Do not answer the question", prompt)
+        self.assertIn("Question: Which meeting is intended?", prompt)
+        self.assertNotIn("speech-ready", prompt.lower())
+        self.assertNotIn("provide exactly one concise", prompt.lower())
 
     def test_model_is_loaded_once_and_only_on_generation(self) -> None:
         factory_calls = 0

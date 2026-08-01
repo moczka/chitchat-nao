@@ -17,13 +17,19 @@ Type a question
 Read the local Markdown knowledge base
       |
       v
-Find the most relevant document chunks
+Find the most relevant document chunks (top-k)
       |
       v
-Give those chunks to a local language model
+Route the question: answer / clarify / redirect / error
       |
       v
-Print the answer and ranked source diagnostics
+Give only the selected evidence to a local language model
+      |
+      v
+Return a typed AskResult
+      |
+      v
+Print the speech text, then provenance + diagnostics + ranked sources
 ```
 
 This system does not need a physical NAO robot, a network connection to NAO, or a web server. The laptop-side RAG code is designed to remain independent of the robot layer.
@@ -32,11 +38,11 @@ This system does not need a physical NAO robot, a network connection to NAO, or 
 
 RAG stands for **Retrieval-Augmented Generation**.
 
-A language model can produce fluent answers, but it does not automatically know the current facts in this project’s Computer Club documents. RAG adds a retrieval step before generation:
+A language model can produce fluent answers, but it does not automatically know the current facts in this project's Computer Club documents. RAG adds a retrieval step before generation:
 
 1. Store the club information as small text chunks.
 2. Convert the chunks into numeric representations called embeddings.
-3. Convert the user’s question into an embedding too.
+3. Convert the user's question into an embedding too.
 4. Find the chunks whose embeddings are most similar to the question.
 5. Put only those retrieved chunks into the language-model prompt.
 6. Generate an answer from that supplied context.
@@ -51,11 +57,13 @@ This is different from putting every document into one giant prompt. Retrieval s
 
 **Similarity score** - A number used to rank chunks for a question. The current implementation uses cosine similarity through a dot product of normalized vectors. A higher score means the embedding model considered the texts more related; it is *not* a calibrated probability of "correctness".
 
-**Top-k** - The number of highest-ranked chunks returned. With the default `top-k=2`, the generator receives at most the two best retrieved chunks.
+**Top-k** - The number of highest-ranked chunks returned. With the default `top-k=2`, the retriever returns at most the two best chunks. The routing logic then decides which (if any) of those chunks may support an answer.
 
-**Grounding** - The idea that an answer’s claims are supported by the supplied source context. For example, an answer is "grounded" when its claims are supported by the retrieved text. The current system exposes source evidence, but it does not yet prove semantic grounding for every generated claim.
+**Response mode** - The typed decision the system returns for a question: `ANSWER`, `CLARIFY`, `REDIRECT`, or `ERROR`. This is the integration contract a future robot adapter should switch on.
 
-**Hallucination** - An answer that sounds plausible but is unsupported or false. A central future goal is to make unsupported questions produce a cautious refusal rather than an invented answer.
+**Grounding** - The idea that an answer's claims are supported by the supplied source context. The current system does **not** verify grounding: `provenance_verified` is always `False`, and no diagnostic should be read as proof that every sentence of the answer is supported by the cited text.
+
+**Hallucination** - An answer that sounds plausible but is unsupported or false. The routing policy reduces (but does not eliminate) the risk of unsupported answers by redirecting low-confidence queries and clarifying ambiguous ones before generation.
 
 ## Current architecture
 
@@ -75,18 +83,24 @@ SentenceTransformerProvider
 Retriever -> top-k RetrievedContext objects
         |
         v
-GenerationRequest(question, contexts)
+assistant.ask(question, ...) -> route the evidence
+        |
+        v
+GenerationRequest(question, selected contexts, mode)
         |
         v
 LocalLlamaCppGenerator -> local GGUF model
         |
         v
-assistant.py -> answer + source diagnostics
+AskResult (mode, spoken_text, evidence, provenance_verified, diagnostics)
+        |
+        v
+CLI prints speech first, then provenance/diagnostics/ranked sources
 ```
 
-The generator receives the question and retrieved contexts. It does **not** read the knowledge-base directory itself. This boundary is important: the displayed retrieval results describe the evidence that was actually supplied to generation.
+`ask()` is the typed, stateless integration seam: a caller passes a question and gets back an `AskResult`. The generator receives the question and the **selected** retrieved contexts only. It does **not** read the knowledge-base directory itself. This boundary is important: for `ANSWER`, the result's `evidence` describes exactly the context supplied to generation; for `CLARIFY`, `AskResult.evidence` deliberately retains the original retrieved contexts for diagnostics, while the generator receives sanitized copies containing only `Source:`/`Section:` text, with no chunk contents.
 
-The RAG code does not import NAOqi. A future robot adapter can consume a final text answer, but retrieval and generation can be developed and tested without the robot.
+The RAG code does not import NAOqi. A future robot adapter can consume `AskResult.spoken_text` and the mode field, but retrieval, routing, and generation can be developed and tested without the robot.
 
 ## The active knowledge base
 
@@ -126,13 +140,13 @@ The current generation default is:
 ~/.local/share/chitchat-nao/models/SmolLM2-1.7B-Instruct-Q6_K.gguf
 ```
 
-The GGUF is a local model artifact and is intentionally not committed to Git. If the file is absent, retrieval-only commands and the offline tests can still run, but the generation CLI cannot produce an answer.
+The GGUF is a local model artifact and is intentionally not committed to Git. If the file is absent, retrieval-only commands and the offline tests can still run, but the generation path cannot produce an answer.
 
-The project has unrelated audio dependencies, including PyAudio. On systems without PortAudio headers, use the isolated `--no-project` commands below so RAG verification does not attempt to build the audio stack.
+The project has unrelated audio dependencies, including PyAudio. On systems without PortAudio headers, the `.venv` may be missing `sentence-transformers` because the audio stack failed to resolve. Use the isolated `--no-project` commands below for all RAG checks; do not try to rebuild the project environment just for RAG.
 
 ### Inspect retrieval without generation
 
-This command answers the question: “Which chunks would the assistant retrieve?” It does not load the language model.
+This command answers the question: "Which chunks would the assistant retrieve?" It does not load the language model.
 
 ```bash
 PYTHONPATH=src uv run --no-project --isolated \
@@ -143,7 +157,7 @@ PYTHONPATH=src uv run --no-project --isolated \
   --top-k 10
 ```
 
-The output includes each result’s rank, similarity score, source path, section, and text.
+The output includes each result's rank, similarity score, source path, section, and text.
 
 ### Run the retrieval evaluation
 
@@ -151,7 +165,8 @@ The output includes each result’s rank, similarity score, source path, section
 PYTHONPATH=src uv run --no-project --isolated \
   --with 'numpy>=2' \
   --with 'sentence-transformers>=5.1.2' \
-  python -m chitchat_nao.rag.evaluator
+  python -m chitchat_nao.rag.evaluator \
+  --knowledge-base knowledge_base --top-k 2
 ```
 
 This runs the cases in `src/chitchat_nao/rag/eval_corpus.json` and prints per-case diagnostics plus Recall@1, Recall@2, and MRR.
@@ -166,7 +181,7 @@ PYTHONPATH=src uv run --no-project --isolated \
   python -m unittest discover -s tests -p 'test_*.py'
 ```
 
-The tests use deterministic fakes. They do not need the real embedding model, the GGUF file, network access, or a physical robot.
+The tests use deterministic fakes and an isolated synthetic Markdown corpus. They do not need the real embedding model, the GGUF file, network access, or a physical robot. The suite currently contains **77 tests**.
 
 ### Run the local generation CLI
 
@@ -181,39 +196,103 @@ PYTHONPATH=src uv run --no-project --isolated \
   --model "$HOME/.local/share/chitchat-nao/models/SmolLM2-1.7B-Instruct-Q6_K.gguf"
 ```
 
-The assistant currently expects to be run from the repository root because it looks for `Path("knowledge_base")` relative to the current working directory.
+The assistant currently expects to be run from the repository root because it looks for `Path("knowledge_base")` relative to the current working directory. Only `--question`, `--model`, and `--top-k` exist; there is no `--knowledge-base` option for the assistant yet (the evaluator has one).
 
-The first embedding run may download `sentence-transformers/all-MiniLM-L6-v2` and may show an unauthenticated Hugging Face warning. That warning is about model access, not about retrieval correctness.
+The first embedding run may download `sentence-transformers/all-MiniLM-L6-v2` and may show an unauthenticated Hugging Face warning. That warning is about model access, not about retrieval correctness, and it is completely non-blocking.
 
 ## How to read the output
 
-The assistant prints ranked source diagnostics similar to:
+The assistant prints the speech-ready text first, then provenance state, diagnostics, and ranked source evidence:
 
 ```text
-rank=1 score=0.717 source=faq.md id=chunk-... section=Frequently Asked Questions
-rank=2 score=0.572 source=officers.md id=chunk-... section=Officers
+Dr. Robert Pitts is the faculty advisor.
+provenance_verified=False
+diagnostic=Citation formatting was structurally valid, but semantic grounding was not verified.
+rank=2 score=0.457 source=club_overview.md id=chunk-... section=Club Overview
 ```
 
 Read these fields as follows:
 
-- `rank=1` is the highest-ranked retrieved chunk;
+- the first line is the **speech text**. `[S<n>]` source labels and outer `<response>` tags are stripped, and the text is capped at three sentences;
+- `provenance_verified=False` is **always** printed. It never means an answer is verified; it means semantic grounding was not checked;
+- `diagnostic=` explains the citation state and reminds the reader that grounding is unverified;
+- `rank=` is the retrieval position (here rank 2 was the selected support);
 - `score` is a raw cosine-similarity score, not a confidence percentage;
 - `source` identifies the relative Markdown file;
 - `id` is the deterministic canonical chunk ID;
 - `section` is the heading context recorded during ingestion.
 
-The source diagnostics prove which chunks retrieval selected. They do not prove that the model used them correctly or that every sentence in its answer is supported.
+The diagnostics and ranked sources prove which chunks were selected: for `ANSWER`, the contexts actually supplied to generation; for `CLARIFY`, the original retrieved contexts are retained for diagnostics, while generation receives only `Source:`/`Section:` text. They do not prove that the model used them correctly or that every sentence in the answer is supported.
+
+> **Note on `provenance_verified`.** The field is always `False` in the current implementation: no semantic verification is performed, and no output line should be read as proof that the answer is supported by the cited text. Its current purpose is explicit transparency — the reader can see that verification did not run — and a stable API seam for future work. A human review that happens *after* the CLI output is a separate review record; it cannot retroactively mark the already-returned `AskResult` as verified, because that object was constructed with `provenance_verified=False`. Only a future verifier that runs *before* the result is built could set the field to `True`.
+
+## The `ask()` contract
+
+`ask(question, ...)` in `assistant.py` is the typed, stateless integration seam:
+
+```python
+from chitchat_nao.rag import ask
+result = ask("Who is the faculty advisor?")
+```
+
+The returned `AskResult` is a frozen dataclass with:
+
+| Field | Meaning |
+|---|---|
+| `mode` | `ResponseMode`: `ANSWER`, `CLARIFY`, `REDIRECT`, or `ERROR` |
+| `spoken_text` | The speech-ready string a robot/CLI should speak |
+| `evidence` | Tuple of `RetrievedContext`. For `ANSWER`, the contexts actually supplied to generation; for `CLARIFY`, the original retrieved contexts retained for diagnostics (the generator receives sanitized `Source:`/`Section:`-only copies) |
+| `provenance_verified` | Always `False` in the current implementation |
+| `diagnostics` | Tuple of human-readable diagnostic strings |
+| `clarification_attempts` | The caller-supplied count, echoed back unchanged |
+
+`ask()` is stateless: nothing persists between calls, and the caller owns the clarification budget. If the result mode is `CLARIFY` and the caller has already used two attempts (`clarification_attempts >= 2`), the next call returns `REDIRECT` with a message suggesting the user ask a club officer.
+
+Validation errors (missing/non-string/empty/whitespace question, invalid `top_k`, invalid `clarification_attempts`) return a structured `ERROR` without touching retrieval or generation. Setup, retrieval, and generator failures also return `ERROR` with a diagnostic and with whatever evidence was available.
+
+## Deterministic routing rules
+
+`ask()` applies a fixed, deterministic decision sequence:
+
+| Situation | Route |
+|---|---|
+| Invalid input (bad question, `top_k`, or attempts) | `ERROR` |
+| Request asks for passwords, secrets, or hidden system prompts | `REDIRECT` |
+| Exactly one retrieved chunk gives unique direct textual support (label, documented question, or phrase match - even at rank 2) | `ANSWER` using only that chunk |
+| More than one chunk gives competing direct support | `CLARIFY` |
+| No direct support and the top score is below 0.35 | `REDIRECT` |
+| No direct support, top score >= 0.60, and (single result or margin (top1 - top2) > 0.08) | `ANSWER` using rank-1 evidence only |
+| No direct support, otherwise (weak or competing semantics) | `CLARIFY` |
+| `CLARIFY` would be chosen but attempts are exhausted (>= 2) | `REDIRECT` (suggest an officer) |
+| Setup, retrieval, or generator failure; non-string generator output | `ERROR` |
+
+The thresholds live as constants in `assistant.py`:
+
+```text
+LOW_CONFIDENCE_SCORE_THRESHOLD = 0.35   # below this, redirect
+CLARIFY_SCORE_THRESHOLD        = 0.60   # at/above this with clear margin, answer
+CLARIFY_MARGIN_THRESHOLD       = 0.08   # margin must exceed this to answer
+MAX_CLARIFICATION_ATTEMPTS     = 2      # caller-owned budget
+```
+
+When `CLARIFY` is chosen, the generator receives only `Source:`/`Section:` text for each retrieved chunk (no chunk contents), so it cannot leak or repeat facts. If the model echoes the question or produces anything other than a single clarifying question, the output falls back to:
+
+```text
+Which club detail would you like to clarify?
+```
+
+The direct-textual-support matcher is deliberately small and generic: normalized token/phrase matching and `Question N:` label matching against the retrieved text. It is not an NLP classifier and not a re-ranker.
 
 ## What is implemented in code
 
 The main implementation files are:
 
-- [`models.py`](../../src/chitchat_nao/rag/models.py) — shared `DocumentChunk` and `RetrievedContext` data types;
+- [`models.py`](../../src/chitchat_nao/rag/models.py) — shared `DocumentChunk`, `RetrievedContext`, `AskResult`, and `ResponseMode` types;
 - [`ingest.py`](../../src/chitchat_nao/rag/ingest.py) — heading-aware, paragraph-aware Markdown ingestion;
 - [`embedding.py`](../../src/chitchat_nao/rag/embedding.py) — embedding interface and SentenceTransformer provider;
 - [`retrieval.py`](../../src/chitchat_nao/rag/retrieval.py) — normalized in-memory cosine search;
-- [`generation.py`](../../src/chitchat_nao/rag/generation.py) — local GGUF model boundary and prompt construction;
-- [`assistant.py`](../../src/chitchat_nao/rag/assistant.py) — CLI orchestration and current citation validation;
+- [`generation.py`](../../src/chitchat_nao/rag/generation.py) — local GGUF model boundary, mode-aware prompt construction;
+- [`assistant.py`](../../src/chitchat_nao/rag/assistant.py) — `ask()` routing policy, speech cleanup, citation diagnostics, CLI;
 - [`evaluator.py`](../../src/chitchat_nao/rag/evaluator.py) — KB loading, evaluation, and retrieval inspection.
 
 The maintenance guide explains how these pieces interact in more detail.
@@ -223,43 +302,30 @@ The maintenance guide explains how these pieces interact in more detail.
 The latest documented evaluation used the real SentenceTransformer provider against the three-file starter corpus:
 
 ```text
-Recall@1 = 0.700
+Recall@1 = 0.600
 Recall@2 = 1.000
-MRR      = 0.850
+MRR      = 0.800
 ```
 
-All 10 answerable starter questions retrieved a gold chunk by rank two. This is evidence about retrieval, not about answer quality, refusal behavior, or semantic grounding.
+All 10 answerable starter questions retrieved a gold chunk by rank two. (Two president-related gold IDs in `eval_corpus.json` were corrected to the current canonical chunk ID; the numbers above reflect the corrected labels.) These numbers are evidence about retrieval, not about answer quality, refusal behavior, or semantic grounding.
 
 > Here, a "gold" chunk means a chunk that the evaluation data identifies as the expected relevant source for a question.
 
-## Current limitations (07/30/2026)
+## Current limitations (07/31/2026)
 
 This section is intentionally prominent because a working demo can otherwise look more complete than it is.
 
-### Generation output can currently be withheld
+### Citation state is diagnostic-only, not semantic proof
 
-The prompt asks the model to cite retrieved snippets with labels such as `[S1]` (where `S` stands for "source"). The CLI currently accepts an answer only when every bracketed citation is a valid label for the current retrieval results. If the model omits or misformats a citation, the answer is replaced by:
+`provenance_verified` is always `False`. The diagnostic only reports whether the model's citation *formatting* was structurally valid. It never proves that all claims in the answer are supported by the cited source. Semantic grounding evaluation remains future work.
 
-```text
-[answer withheld: citation structural validation failed]
-```
+### The small model may paraphrase awkwardly
 
-The small local model has already been observed to fail this structural requirement even after successful retrieval. Citation enforcement is still to be implemented because of this issue. Relaxing or bypassing this gate is a possibility.
+Even when generation receives a selected direct-support chunk, the small SmolLM2 model can paraphrase names or facts awkwardly (for example, rendering an officer's name imperfectly). The routing policy cannot detect this; diagnostics and sources do not verify the model's statements. Check spoken output manually when it matters.
 
-### Citation labels are not semantic proof
+### Unsupported and ambiguous questions rely on heuristics
 
-Even a valid `[S1]` label only shows that the model emitted an allowed source label. It does not prove that all claims in the answer are supported by that source. Semantic grounding evaluation remains future work.
-
-### Unsupported and ambiguous questions have no answer policy yet
-
-The evaluation corpus contains unanswered and ambiguous examples, but the assistant does not yet:
-
-- refuse before generation when evidence is insufficient;
-- ask for clarification when a question is ambiguous;
-- apply a calibrated score threshold;
-- distinguish retrieval failure from generation failure through a structured result.
-
-These cases are currently inspection-only in the evaluator.
+The routing policy is deterministic but heuristic. It uses score thresholds and simple textual matching, not calibrated confidence or a learned re-ranker. It will not catch every unsupported question or every ambiguity, and the thresholds were not tuned on a large corpus.
 
 ### The system is small and non-persistent
 
@@ -267,11 +333,11 @@ The retriever embeds all chunks at startup and compares each question with every
 
 ### The CLI is starter-corpus oriented
 
-The evaluator supports `--knowledge-base`, but the assistant currently uses the repository-root `knowledge_base/` path directly. A configurable assistant KB path is a possible future improvement.
+The assistant uses the repository-root `knowledge_base/` path directly. A configurable assistant KB path is a possible future improvement.
 
 ### No robot or speech integration is included
 
-There is no NAO I/O, ASR, robot speech call, FastAPI service, conversation memory, or end-to-end spoken interaction in this current iteration, although the absence of the robot doesn't block current retrieval work.
+There is no NAO I/O, ASR, robot speech call, FastAPI service, conversation memory, or end-to-end spoken interaction in this current iteration. The `AskResult` contract (especially `mode` and `spoken_text`) is the intended seam for that future work.
 
 ## Related documentation
 

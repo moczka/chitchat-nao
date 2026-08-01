@@ -46,7 +46,7 @@
     "question": "Who is the president?",
     "category": "answerable",
     "relevant_chunk_ids": [
-      "chunk-564c8ebc9fe9c4eb37d9ac4276f87e08dc2e376e2366afde6305bd446294641d"
+      "chunk-472fc9f75cc6e4b5e4d44263759f8d18e9b3b1602184f63287fc2d22b02eeecc"
     ],
     "expected_answer_contains": ["President", "directs Computer Club"]
   },
@@ -54,7 +54,7 @@
     "question": "Who leads the Computer Club as president?",
     "category": "answerable",
     "relevant_chunk_ids": [
-      "chunk-564c8ebc9fe9c4eb37d9ac4276f87e08dc2e376e2366afde6305bd446294641d"
+      "chunk-472fc9f75cc6e4b5e4d44263759f8d18e9b3b1602184f63287fc2d22b02eeecc"
     ],
     "expected_answer_contains": ["directs Computer Club"]
   },

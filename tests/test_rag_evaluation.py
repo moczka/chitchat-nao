@@ -20,6 +20,7 @@ from chitchat_nao.rag.evaluator import (
     format_report,
     load_eval_cases,
 )
+from chitchat_nao.rag.ingest import ingest_markdown
 from chitchat_nao.rag.models import DocumentChunk, RetrievedContext
 from chitchat_nao.rag.retrieval import Retriever
 
@@ -59,6 +60,115 @@ class WordOverlapProvider:
 
 
 class EvaluationTests(unittest.TestCase):
+    def test_isolated_synthetic_corpus_passes_answerable_retrieval_at_top_two(
+        self,
+    ) -> None:
+        fixture_root = (
+            Path(__file__).parent / "fixtures" / "synthetic_retrieval_corpus"
+        )
+        eval_path = fixture_root / "synthetic_retrieval_eval.json"
+
+        self.assertTrue(fixture_root.is_dir())
+        self.assertNotIn("knowledge_base", fixture_root.resolve().parts)
+        self.assertNotEqual(
+            fixture_root.resolve(), Path("knowledge_base").resolve()
+        )
+        markdown_paths = sorted(fixture_root.glob("*.md"))
+        self.assertGreaterEqual(len(markdown_paths), 5)
+
+        chunks = load_knowledge_base(fixture_root)
+        ingested_chunks = [
+            chunk
+            for path in markdown_paths
+            for chunk in ingest_markdown(
+                path, path.relative_to(fixture_root).as_posix()
+            )
+        ]
+        self.assertEqual(chunks, ingested_chunks)
+        self.assertTrue(all(chunk.id.startswith("chunk-") for chunk in chunks))
+        self.assertEqual(len({chunk.id for chunk in chunks}), len(chunks))
+
+        raw_cases = json.loads(eval_path.read_text(encoding="utf-8"))
+        self.assertGreaterEqual(len(raw_cases), 24)
+        self.assertLessEqual(len(raw_cases), 30)
+        scenario_categories = {case["scenario_category"] for case in raw_cases}
+        self.assertTrue(
+            {
+                "direct_fact",
+                "paraphrase",
+                "ambiguous_competing",
+                "weak_relevant",
+                "unrelated",
+                "adversarial_trick_unanswered",
+                "nonce_fact_contrast",
+            }.issubset(scenario_categories)
+        )
+        self.assertGreaterEqual(
+            sum(
+                case["scenario_category"] == "nonce_fact_contrast"
+                for case in raw_cases
+            ),
+            2,
+        )
+
+        cases = load_eval_cases(eval_path)
+        self.assertEqual(len(cases), len(raw_cases))
+        chunks_by_id = {chunk.id: chunk for chunk in chunks}
+        raw_cases_by_question = {case["question"]: case for case in raw_cases}
+        for case in cases:
+            if case.category == "answerable":
+                self.assertTrue(case.relevant_chunk_ids)
+                for chunk_id in case.relevant_chunk_ids:
+                    self.assertIn(chunk_id, chunks_by_id)
+                    self.assertNotIn(
+                        "knowledge_base", chunks_by_id[chunk_id].source_path
+                    )
+                gold_text = " ".join(
+                    chunks_by_id[chunk_id].text
+                    for chunk_id in case.relevant_chunk_ids
+                ).lower()
+                self.assertTrue(
+                    all(
+                        phrase.lower() in gold_text
+                        for phrase in case.expected_answer_contains
+                    )
+                )
+                self.assertEqual(
+                    raw_cases_by_question[case.question]["category"],
+                    "answerable",
+                )
+
+        provider = WordOverlapProvider(
+            [chunk.text for chunk in chunks]
+            + [case.question for case in cases]
+        )
+        retriever = Retriever(chunks, provider)
+        report = evaluate_corpus(
+            eval_path,
+            lambda question: retriever.search(question, top_k=2),
+        )
+
+        answerable = [
+            case for case in report.cases if case.category == "answerable"
+        ]
+        self.assertTrue(answerable)
+        self.assertTrue(
+            all(
+                len(case.retrieved_ids) == 2
+                and case.has_gold_hit
+                and case.recall_at_2 == 1.0
+                for case in answerable
+            )
+        )
+        self.assertEqual(report.recall_at_2, 1.0)
+        self.assertTrue(
+            all(
+                case.category != "answerable" and case.recall_at_2 is None
+                for case in report.cases
+                if case.category != "answerable"
+            )
+        )
+
     def test_knowledge_base_ids_are_independent_of_cwd_and_path_form(
         self,
     ) -> None:
