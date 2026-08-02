@@ -12,6 +12,46 @@ from chitchat_nao.rag.models import ResponseMode, RetrievedContext
 
 
 class GenerationTests(unittest.TestCase):
+    def test_empty_answer_mode_uses_explicit_general_knowledge_prompt(
+        self,
+    ) -> None:
+        captured: dict[str, object] = {}
+
+        class FakeLlama:
+            def create_chat_completion(
+                self, **kwargs: object
+            ) -> dict[str, object]:
+                captured.update(kwargs)
+                return {
+                    "choices": [{"message": {"content": "general answer"}}]
+                }
+
+        with tempfile.TemporaryDirectory() as directory:
+            model_path = Path(directory) / "model.gguf"
+            model_path.touch()
+            generator = LocalLlamaCppGenerator(
+                model_path, llama_factory=FakeLlama
+            )
+            response = generator.generate(
+                GenerationRequest(
+                    "What is the capital of France?",
+                    [],
+                    ResponseMode.ANSWER,
+                )
+            )
+
+        self.assertEqual(response, "general answer")
+        messages = cast(list[dict[str, object]], captured["messages"])
+        system_message = str(messages[0]["content"]).lower()
+        prompt = str(messages[1]["content"])
+        self.assertIn("general knowledge", system_message)
+        self.assertIn("concise", system_message)
+        self.assertIn("general knowledge", prompt.lower())
+        self.assertIn("concise", prompt.lower())
+        self.assertIn("Question: What is the capital of France?", prompt)
+        self.assertNotIn("using only the supplied context", system_message)
+        self.assertNotIn("using only the supplied context", prompt.lower())
+
     def test_generator_sends_only_supplied_context_and_returns_text(
         self,
     ) -> None:

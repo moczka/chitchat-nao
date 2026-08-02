@@ -324,7 +324,7 @@
     "id": "unrelated-01-weather",
     "category": "unrelated",
     "question": "Will it rain tomorrow?",
-    "expected_mode": "REDIRECT",
+    "expected_mode": "ANSWER",
     "evidence": [
       {
         "id": "synthetic-unrelated-01",
@@ -340,7 +340,7 @@
     "id": "unrelated-02-recipe",
     "category": "unrelated",
     "question": "How do I bake a cake?",
-    "expected_mode": "REDIRECT",
+    "expected_mode": "ANSWER",
     "evidence": [
       {
         "id": "synthetic-unrelated-02",
@@ -356,7 +356,7 @@
     "id": "unrelated-03-empty",
     "category": "unrelated",
     "question": "What is the capital of a distant planet?",
-    "expected_mode": "REDIRECT",
+    "expected_mode": "ANSWER",
     "evidence": []
   },
   {

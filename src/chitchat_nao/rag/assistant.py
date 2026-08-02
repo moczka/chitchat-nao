@@ -116,6 +116,103 @@ _PROMPT_INJECTION_REQUEST = re.compile(
     r"|\b(list)\b.*\b(your|the|hidden)\b.*\b(system[-\s]+rules?)\b",
     re.IGNORECASE,
 )
+_CLUB_SCOPE_REQUEST = re.compile(r"\b(?:clubs?|quincy)\b", re.IGNORECASE)
+
+# These are the few club concepts that are meaningful without an explicit
+# club name. Unknown meaningful terms identify an outside topic instead.
+_CLUB_SCOPE_TERMS = frozenset(
+    {
+        "access",
+        "advisor",
+        "advisors",
+        "badge",
+        "badges",
+        "calendar",
+        "chair",
+        "contact",
+        "contacts",
+        "cost",
+        "costs",
+        "dues",
+        "fee",
+        "fees",
+        "gathering",
+        "gatherings",
+        "join",
+        "joined",
+        "joining",
+        "joins",
+        "lead",
+        "leader",
+        "leaders",
+        "leads",
+        "member",
+        "members",
+        "membership",
+        "meeting",
+        "meetings",
+        "officer",
+        "officers",
+        "paid",
+        "pay",
+        "payment",
+        "payments",
+        "price",
+        "prices",
+        "president",
+        "presidents",
+        "role",
+        "roles",
+        "room",
+        "rooms",
+        "schedule",
+        "secretary",
+        "treasurer",
+        "vice",
+        "vicepresident",
+        "workshop",
+        "workshops",
+    }
+)
+_CLUB_MEMBERSHIP_TERMS = frozenset(
+    {
+        "cost",
+        "costs",
+        "dues",
+        "fee",
+        "fees",
+        "join",
+        "joined",
+        "joining",
+        "joins",
+        "member",
+        "members",
+        "membership",
+        "paid",
+        "pay",
+        "payment",
+        "payments",
+        "price",
+        "prices",
+    }
+)
+_CLUB_ROLE_TERMS = frozenset(
+    {
+        "advisor",
+        "advisors",
+        "chair",
+        "leader",
+        "leaders",
+        "officer",
+        "officers",
+        "president",
+        "presidents",
+        "secretary",
+        "treasurer",
+        "vice",
+        "vicepresident",
+    }
+)
 
 
 def validate_generated_answer(
@@ -144,6 +241,16 @@ def _is_protected_request(question: str) -> bool:
     return bool(
         _SENSITIVE_REQUEST.search(question)
         or _PROMPT_INJECTION_REQUEST.search(question)
+    )
+
+
+def _is_club_scoped_question(question: str) -> bool:
+    if _CLUB_SCOPE_REQUEST.search(question) is not None:
+        return True
+    question_terms = set(_normalized_query_terms(question))
+    return bool(question_terms) and (
+        bool(question_terms & _CLUB_MEMBERSHIP_TERMS)
+        or question_terms.issubset(_CLUB_SCOPE_TERMS)
     )
 
 
@@ -362,7 +469,43 @@ def ask(
         )
 
     direct_support = _direct_supporting_contexts(question, evidence)
-    if not direct_support and (
+    question_terms = set(_normalized_query_terms(question))
+    retrieved_terms = {
+        term
+        for context in evidence
+        for term in _normalized_query_terms(context.text)
+    }
+    outside_topic_terms = question_terms - _CLUB_SCOPE_TERMS
+    shared_terms = question_terms & retrieved_terms
+    no_outside_topic_overlap = not (retrieved_terms & outside_topic_terms)
+    role_word_only_collision = (
+        bool(shared_terms)
+        and shared_terms.issubset(_CLUB_ROLE_TERMS)
+        and no_outside_topic_overlap
+    )
+    general_fallback = (
+        not direct_support
+        and bool(question_terms)
+        and not _is_club_scoped_question(question)
+        and (
+            not evidence
+            or (
+                evidence[0].score < LOW_CONFIDENCE_SCORE_THRESHOLD
+                and no_outside_topic_overlap
+            )
+            or role_word_only_collision
+            or (
+                shared_terms
+                and shared_terms.issubset(_CLUB_SCOPE_TERMS)
+                and no_outside_topic_overlap
+                and evidence[0].score < CLARIFY_SCORE_THRESHOLD
+            )
+        )
+    )
+    if general_fallback:
+        response_mode = ResponseMode.ANSWER
+        generation_evidence: list[RetrievedContext] = []
+    elif not direct_support and (
         not evidence or evidence[0].score < LOW_CONFIDENCE_SCORE_THRESHOLD
     ):
         return _redirect_result(
@@ -371,27 +514,27 @@ def ask(
             _CLUB_REDIRECT,
             "Retrieved evidence was empty or below the relevance threshold.",
         )
-
-    response_mode = (
-        ResponseMode.CLARIFY
-        if len(direct_support) > 1
-        else (
-            ResponseMode.ANSWER
-            if direct_support
+    else:
+        response_mode = (
+            ResponseMode.CLARIFY
+            if len(direct_support) > 1
             else (
-                ResponseMode.CLARIFY
-                if _needs_clarification(evidence)
-                else ResponseMode.ANSWER
+                ResponseMode.ANSWER
+                if direct_support
+                else (
+                    ResponseMode.CLARIFY
+                    if _needs_clarification(evidence)
+                    else ResponseMode.ANSWER
+                )
             )
         )
-    )
-    generation_evidence = (
-        _clarification_contexts(evidence)
-        if response_mode is ResponseMode.CLARIFY
-        else direct_support
-        if direct_support
-        else evidence[:1]
-    )
+        generation_evidence = (
+            _clarification_contexts(evidence)
+            if response_mode is ResponseMode.CLARIFY
+            else direct_support
+            if direct_support
+            else evidence[:1]
+        )
     if (
         response_mode is ResponseMode.CLARIFY
         and clarification_attempts >= MAX_CLARIFICATION_ATTEMPTS
@@ -460,7 +603,9 @@ def ask(
         "was not verified."
     )
     result_evidence = (
-        direct_support
+        []
+        if general_fallback
+        else direct_support
         if response_mode is ResponseMode.ANSWER and direct_support
         else evidence[:1]
         if response_mode is ResponseMode.ANSWER

@@ -26,7 +26,7 @@ The synthetic fixtures must stay separate from the production KB and from the re
 | `ingest.py` | Parse Markdown into chunks | One Markdown path | `list[DocumentChunk]` |
 | `embedding.py` | Convert text to normalized vectors | Text list | NumPy array |
 | `retrieval.py` | Rank chunks by cosine similarity | Chunks and question | `list[RetrievedContext]` |
-| `generation.py` | Ask local GGUF model for text | Question, selected contexts, response mode | Answer string |
+| `generation.py` | Ask local GGUF model for text | Question, selected contexts (may be empty), response mode | Answer string |
 | `assistant.py` | `ask()` routing policy, speech cleanup, diagnostics, CLI | Question and factories | `AskResult` |
 | `evaluator.py` | Load KB and score retrieval | KB, eval corpus, questions | Reports or inspection output |
 | `eval_corpus.json` | Retrieval labels | Questions and gold IDs | Input to evaluator |
@@ -40,7 +40,7 @@ Markdown files
   -> Retriever.search(question)
   -> RetrievedContext
   -> ask() routing decision (ANSWER / CLARIFY / REDIRECT / ERROR)
-  -> GenerationRequest (only for ANSWER and CLARIFY)
+  -> GenerationRequest (only for ANSWER and CLARIFY; contexts are empty for a general-knowledge ANSWER)
   -> local model output -> cleaned speech text
   -> AskResult
 ```
@@ -162,10 +162,13 @@ The prompt includes context labels in retrieval order:
 Question: ...
 ```
 
-The instruction depends on the response mode:
+The instruction and system message depend on the response mode **and** on whether context was supplied:
 
-- `ANSWER` asks for one concise, speech-ready answer using only the supplied context;
-- `CLARIFY` asks for one concise clarifying question using only the supplied context, and explicitly tells the model not to answer or add facts.
+- a context-backed `ANSWER` asks for one concise, speech-ready answer using only the supplied context (system: `You answer questions from retrieved context.`);
+- a general-knowledge `ANSWER` (empty context) asks for one concise, speech-ready answer using general knowledge, and tells the model not to invent citations or claim support from supplied context (system: `You answer questions concisely using general knowledge when no retrieved context is supplied.`);
+- `CLARIFY` asks for one concise clarifying question using only the supplied context, and explicitly tells the model not to answer or add facts (system: `You ask concise clarifying questions from retrieved context.`).
+
+Only the empty-context `ANSWER` path uses general knowledge; context-backed `ANSWER` and all `CLARIFY` prompts remain context-only.
 
 Generation uses temperature `0.0`, seed `42`, and a default maximum of `256` tokens. The current request-local labels are separate from canonical chunk IDs.
 
@@ -179,8 +182,8 @@ For `CLARIFY`, `assistant.py` deliberately sends only `Source:`/`Section:` text 
 2. **Load the KB and retrieve.** `load_knowledge_base(Path("knowledge_base"))`, construct the embedding provider and retriever, search with `top_k`. Any exception returns `ERROR` with a `Retrieval setup error:` diagnostic.
 3. **Check protected requests.** Questions asking for passwords, secrets, API keys, or hidden system prompts (a small regex check) return `REDIRECT` without generation.
 4. **Find direct textual support.** A deliberately small matcher checks whether any retrieved chunk *directly* contains the question's facts: an exact normalized label match (for example `President - ...` for "Who is the president?"), a documented `Question N:` line containing all query terms, or a contiguous normalized phrase match. This is generic token/phrase logic, not an NLP classifier or re-ranker.
-5. **Route.** See the routing rules below.
-6. **Generate (only for `ANSWER` and `CLARIFY`).** The generator receives only the selected support contexts, or only source/section metadata for clarification. Generator exceptions return `ERROR` with a `Generator error:` diagnostic plus the evidence that was available; a non-string return value is also `ERROR`.
+5. **Route.** See the routing rules below. For clearly outside-topic questions with no usable club evidence, routing selects a general-knowledge `ANSWER` with an empty context list.
+6. **Generate (only for `ANSWER` and `CLARIFY`).** The generator receives only the selected support contexts, only source/section metadata for clarification, or an empty context list for a general-knowledge answer. Generator exceptions return `ERROR` with a `Generator error:` diagnostic plus the evidence that was available; a non-string return value is also `ERROR`.
 7. **Clean the speech text.** For `ANSWER`, strip `[S<n>]` labels and outer `<response>` tags, normalize whitespace/punctuation, and keep at most three sentences. For `CLARIFY`, keep the model output only if it is a single question that is not an echo of the user's question; otherwise use the neutral fallback `Which club detail would you like to clarify?`.
 8. **Attach citation diagnostics.** Citation formatting is validated structurally only (see below).
 9. **Return `AskResult`.**
@@ -191,13 +194,18 @@ For `CLARIFY`, `assistant.py` deliberately sends only `Source:`/`Section:` text 
 |---|---|
 | Invalid input (bad question, `top_k`, or attempts) | `ERROR` |
 | Request asks for passwords, secrets, or hidden system prompts | `REDIRECT` |
+| Clearly outside-topic/general question with no usable club evidence (general-knowledge fallback) | `ANSWER` from general knowledge; no evidence |
 | Exactly one chunk gives unique direct textual support (even at rank 2) | `ANSWER` using only that chunk |
 | More than one chunk gives competing direct support | `CLARIFY` |
-| No direct support and top score < 0.35 | `REDIRECT` |
+| Club-scoped (or overlapping) question, no direct support, top score < 0.35 | `REDIRECT` |
 | No direct support, top score >= 0.60, and (single result or top1 - top2 margin > 0.08) | `ANSWER` using rank-1 evidence only |
 | No direct support, otherwise (weak or competing semantics) | `CLARIFY` |
 | `CLARIFY` would be chosen but attempts >= 2 | `REDIRECT` (suggest an officer) |
 | Setup, retrieval, or generator failure; non-string generator output | `ERROR` |
+
+The general-knowledge fallback is deliberately small and conservative. It applies only when there is no direct club support **and** the question is not club-scoped: no explicit `club`/`Quincy` mention, no membership or payment intent (`membership`, `fee`, `cost`, `price`, `dues`, `pay`, `join`, ...), and not composed entirely of known club-scope words (`president`, `officer`, `meeting`, `room`, ...). Even then it fires only when the club evidence is unusable: nothing was retrieved; the top score is below 0.35 with no outside-topic overlap; the overlap is made entirely of club role words with no outside-topic terms in the retrieved chunks; or only club-scope words overlap below the 0.60 clarify threshold. The role-word case is a deliberate, score-independent carve-out: high-confidence semantic club answers remain context-bound, but an outside-topic question like `Who is the president of the United States?` falls back to general knowledge even when the club `President` chunk scores 0.72.
+
+The fallback does not weaken the club path: direct club evidence still wins, unqualified club-style questions (`Who is the president?`) stay club-scoped, joining and membership/payment intent stays club-scoped, unsupported club questions still redirect, and close or weak club evidence still clarifies. The three `unrelated` scenarios in the synthetic fixture now expect a general-knowledge `ANSWER` instead of `REDIRECT`.
 
 Thresholds are named constants in `assistant.py`:
 
@@ -228,12 +236,12 @@ A structurally valid label proves only that the model emitted an allowed label. 
 |---|---|
 | `mode` | `ResponseMode` (`ANSWER`, `CLARIFY`, `REDIRECT`, `ERROR`) |
 | `spoken_text` | Speech-ready string |
-| `evidence` | Tuple of `RetrievedContext` actually selected/supplied |
+| `evidence` | Tuple of `RetrievedContext` actually selected/supplied (empty for a general-knowledge answer) |
 | `provenance_verified` | Always `False` in the current implementation |
 | `diagnostics` | Tuple of human-readable strings |
 | `clarification_attempts` | Echoed back from the caller |
 
-For `ANSWER`, `evidence` contains only the chunks that supported the answer (direct support, or rank-1 when answering from the semantic-score rule). For `CLARIFY` and `REDIRECT`, `evidence` contains the retrieved context. For input-validation `ERROR`, `evidence` is empty; for setup failures it is empty; for generation failures it retains whatever was retrieved.
+For a context-backed `ANSWER`, `evidence` contains only the chunks that supported the answer (direct support, or rank-1 when answering from the semantic-score rule); for a general-knowledge `ANSWER` it is empty because no context was supplied to generation. For `CLARIFY` and `REDIRECT`, `evidence` contains the retrieved context. For input-validation `ERROR`, `evidence` is empty; for setup failures it is empty; for generation failures it retains whatever was retrieved.
 
 The convenience export `chitchat_nao.rag.ask()` (in `__init__.py`) lazily dispatches to `assistant.ask()`, so robot-side integration can import one function.
 
@@ -317,7 +325,7 @@ Recall@2 = 1.000
 MRR      = 0.800
 ```
 
-All 10 answerable cases hit a gold chunk by rank two. These numbers are retrieval results only. They do not show that the model generated a correct answer, refused an unsupported question, clarified ambiguity, or used the evidence semantically.
+All 10 answerable cases hit a gold chunk by rank two. These numbers are retrieval results only. They do not show that the model generated a correct answer, refused an unsupported question, clarified ambiguity, or used the evidence semantically. They are unchanged by the general-knowledge answer routing: the metrics measure retrieval only, and routing does not alter embeddings, scores, or gold labels.
 
 Note that the routing policy does **not** use these gold labels: `ask()` decides from scores and direct textual matching alone. Retrieval metrics and routing behavior are evaluated separately.
 
@@ -333,7 +341,7 @@ PYTHONPATH=src uv run --no-project --isolated \
   python -m unittest discover -s tests -p 'test_*.py'
 ```
 
-The tests are intentionally independent of real model inference. The suite currently contains **77 tests**, and `ruff check src tests` plus `git diff --check` pass cleanly.
+The tests are intentionally independent of real model inference. The suite currently contains **84 tests**, and `ruff check src tests` (project-pinned `ruff>=0.15.16`) plus `git diff --check` pass cleanly.
 
 ### `test_rag_ingestion.py`
 
@@ -345,7 +353,7 @@ Uses fixed vectors to check ordering, score and metadata propagation, and determ
 
 ### `test_rag_generation.py`
 
-Uses a fake Llama object to check prompt delimiters and labels, the mode-dependent instructions (`ANSWER` vs `CLARIFY`), lazy model loading, deterministic generation arguments, and missing-model validation.
+Uses a fake Llama object to check prompt delimiters and labels, the mode-dependent instructions (`ANSWER` vs `CLARIFY`), the empty-context general-knowledge prompt for general answers, lazy model loading, deterministic generation arguments, and missing-model validation.
 
 ### `test_rag_assistant.py`
 
@@ -357,8 +365,10 @@ The contract test for `ask()`. Uses an isolated JSON scenario set (`tests/fixtur
 
 - `AskResult` is frozen and typed, and `ResponseMode` covers exactly the four modes;
 - the routing rules above, including rank-2 direct support, exact-label preference, competing-direct-support clarification, the >= 0.60 + margin > 0.08 semantic rule, and the < 0.35 redirect;
+- the general-knowledge fallback: clearly outside-topic questions answer with no context supplied and empty `evidence` (`provenance_verified=False`), including `Who is the president of the United States?` ignoring a high-scoring club `President` chunk;
+- the club-scope guard: unqualified club questions (`Who is the president?`, `Can I join?`) and membership/payment intent (`membership`, `cost`, `price`, `dues`, `fee`) stay club-scoped and never fall back to general knowledge;
 - invalid input (question, `top_k`, `clarification_attempts`) returns `ERROR` without touching retrieval/generation;
-- protected requests redirect without generation;
+- protected requests redirect without constructing the generator;
 - clarification sends source/section-only contexts and falls back to `Which club detail would you like to clarify?` for non-questions or echoed questions;
 - the caller-managed two-attempt budget (attempts 0 and 1 clarify, attempts >= 2 redirect);
 - speech cleanup (tags/citations stripped, three-sentence cap);
@@ -447,6 +457,7 @@ Inspect source, KB, evaluation, and tests together. Never stage local GGUF files
 The current implementation does not include:
 
 - semantic answer-grounding evaluation (citations are diagnostic-only; `provenance_verified` is always `False`);
+- current or web-verified general knowledge (outside-topic answers come from the local model's training knowledge, are unverified, and may be stale);
 - a calibrated confidence model (thresholds 0.35/0.60/0.08 are heuristics);
 - a vector database or persistent index;
 - reranking;
@@ -464,7 +475,7 @@ For a normal code or KB change:
 - [ ] Keep the generator dependent on retrieved/selected contexts, not direct KB access.
 - [ ] Keep KB and `eval_corpus.json` changes synchronized when IDs change.
 - [ ] Keep synthetic fixtures under `tests/fixtures/`, clearly fake, and separate from production KB/metrics.
-- [ ] Run focused tests, then the full offline suite (currently 77 tests) when pipeline behavior changes.
+- [ ] Run focused tests, then the full offline suite (currently 84 tests) when pipeline behavior changes.
 - [ ] Run retrieval evaluation after corpus or retrieval changes.
 - [ ] Manually inspect real CLI output after generation or routing changes.
 - [ ] Do not claim semantic grounding from structural citations alone; `provenance_verified` is always `False`.

@@ -23,7 +23,8 @@ Find the most relevant document chunks (top-k)
 Route the question: answer / clarify / redirect / error
       |
       v
-Give only the selected evidence to a local language model
+Give the selected evidence to a local language model
+      (or no context at all, for a general-knowledge answer)
       |
       v
 Return a typed AskResult
@@ -31,6 +32,8 @@ Return a typed AskResult
       v
 Print the speech text, then provenance + diagnostics + ranked sources
 ```
+
+Two answer paths exist. Context-backed answers use only the selected club evidence. A deliberately small heuristic also routes clearly outside-topic/general questions (for example, `What is the capital of France?`) to the local model's general knowledge, with **no retrieved context** supplied to generation and an empty `AskResult.evidence`.
 
 This system does not need a physical NAO robot, a network connection to NAO, or a web server. The laptop-side RAG code is designed to remain independent of the robot layer.
 
@@ -59,9 +62,9 @@ This is different from putting every document into one giant prompt. Retrieval s
 
 **Top-k** - The number of highest-ranked chunks returned. With the default `top-k=2`, the retriever returns at most the two best chunks. The routing logic then decides which (if any) of those chunks may support an answer.
 
-**Response mode** - The typed decision the system returns for a question: `ANSWER`, `CLARIFY`, `REDIRECT`, or `ERROR`. This is the integration contract a future robot adapter should switch on.
+**Response mode** - The typed decision the system returns for a question: `ANSWER`, `CLARIFY`, `REDIRECT`, or `ERROR`. This is the integration contract a future robot adapter should switch on. An `ANSWER` is either evidence-backed (built from retrieved club chunks) or a general-knowledge answer (no retrieved context).
 
-**Grounding** - The idea that an answer's claims are supported by the supplied source context. The current system does **not** verify grounding: `provenance_verified` is always `False`, and no diagnostic should be read as proof that every sentence of the answer is supported by the cited text.
+**Grounding** - The idea that an answer's claims are supported by the supplied source context. The current system does **not** verify grounding: `provenance_verified` is always `False`, and no diagnostic should be read as proof that every sentence of the answer is supported by the cited text. A general-knowledge answer has no source context to ground against at all.
 
 **Hallucination** - An answer that sounds plausible but is unsupported or false. The routing policy reduces (but does not eliminate) the risk of unsupported answers by redirecting low-confidence queries and clarifying ambiguous ones before generation.
 
@@ -98,7 +101,7 @@ AskResult (mode, spoken_text, evidence, provenance_verified, diagnostics)
 CLI prints speech first, then provenance/diagnostics/ranked sources
 ```
 
-`ask()` is the typed, stateless integration seam: a caller passes a question and gets back an `AskResult`. The generator receives the question and the **selected** retrieved contexts only. It does **not** read the knowledge-base directory itself. This boundary is important: for `ANSWER`, the result's `evidence` describes exactly the context supplied to generation; for `CLARIFY`, `AskResult.evidence` deliberately retains the original retrieved contexts for diagnostics, while the generator receives sanitized copies containing only `Source:`/`Section:` text, with no chunk contents.
+`ask()` is the typed, stateless integration seam: a caller passes a question and gets back an `AskResult`. The generator receives the question and the **selected** retrieved contexts only. It does **not** read the knowledge-base directory itself. This boundary is important: for a context-backed `ANSWER`, the result's `evidence` describes exactly the context supplied to generation; for a general-knowledge `ANSWER`, no context is supplied, so `evidence` is empty; for `CLARIFY`, `AskResult.evidence` deliberately retains the original retrieved contexts for diagnostics, while the generator receives sanitized copies containing only `Source:`/`Section:` text, with no chunk contents.
 
 The RAG code does not import NAOqi. A future robot adapter can consume `AskResult.spoken_text` and the mode field, but retrieval, routing, and generation can be developed and tested without the robot.
 
@@ -181,7 +184,7 @@ PYTHONPATH=src uv run --no-project --isolated \
   python -m unittest discover -s tests -p 'test_*.py'
 ```
 
-The tests use deterministic fakes and an isolated synthetic Markdown corpus. They do not need the real embedding model, the GGUF file, network access, or a physical robot. The suite currently contains **77 tests**.
+The tests use deterministic fakes and an isolated synthetic Markdown corpus. They do not need the real embedding model, the GGUF file, network access, or a physical robot. The suite currently contains **84 tests**.
 
 ### Run the local generation CLI
 
@@ -224,6 +227,8 @@ Read these fields as follows:
 
 The diagnostics and ranked sources prove which chunks were selected: for `ANSWER`, the contexts actually supplied to generation; for `CLARIFY`, the original retrieved contexts are retained for diagnostics, while generation receives only `Source:`/`Section:` text. They do not prove that the model used them correctly or that every sentence in the answer is supported.
 
+A general-knowledge answer prints **no** ranked sources: generation received no context and `AskResult.evidence` is empty, so the only output lines are the speech text, `provenance_verified=False`, and the citation diagnostic. The speech text is the local model's own training knowledge, which may be stale.
+
 > **Note on `provenance_verified`.** The field is always `False` in the current implementation: no semantic verification is performed, and no output line should be read as proof that the answer is supported by the cited text. Its current purpose is explicit transparency — the reader can see that verification did not run — and a stable API seam for future work. A human review that happens *after* the CLI output is a separate review record; it cannot retroactively mark the already-returned `AskResult` as verified, because that object was constructed with `provenance_verified=False`. Only a future verifier that runs *before* the result is built could set the field to `True`.
 
 ## The `ask()` contract
@@ -241,7 +246,7 @@ The returned `AskResult` is a frozen dataclass with:
 |---|---|
 | `mode` | `ResponseMode`: `ANSWER`, `CLARIFY`, `REDIRECT`, or `ERROR` |
 | `spoken_text` | The speech-ready string a robot/CLI should speak |
-| `evidence` | Tuple of `RetrievedContext`. For `ANSWER`, the contexts actually supplied to generation; for `CLARIFY`, the original retrieved contexts retained for diagnostics (the generator receives sanitized `Source:`/`Section:`-only copies) |
+| `evidence` | Tuple of `RetrievedContext`. For a context-backed `ANSWER`, the contexts actually supplied to generation; for a general-knowledge `ANSWER`, empty; for `CLARIFY`, the original retrieved contexts retained for diagnostics (the generator receives sanitized `Source:`/`Section:`-only copies) |
 | `provenance_verified` | Always `False` in the current implementation |
 | `diagnostics` | Tuple of human-readable diagnostic strings |
 | `clarification_attempts` | The caller-supplied count, echoed back unchanged |
@@ -258,13 +263,18 @@ Validation errors (missing/non-string/empty/whitespace question, invalid `top_k`
 |---|---|
 | Invalid input (bad question, `top_k`, or attempts) | `ERROR` |
 | Request asks for passwords, secrets, or hidden system prompts | `REDIRECT` |
+| Clearly outside-topic/general question with no usable club evidence (general-knowledge fallback) | `ANSWER` from general knowledge; no evidence |
 | Exactly one retrieved chunk gives unique direct textual support (label, documented question, or phrase match - even at rank 2) | `ANSWER` using only that chunk |
 | More than one chunk gives competing direct support | `CLARIFY` |
-| No direct support and the top score is below 0.35 | `REDIRECT` |
+| Club-scoped (or overlapping) question, no direct support, top score below 0.35 | `REDIRECT` |
 | No direct support, top score >= 0.60, and (single result or margin (top1 - top2) > 0.08) | `ANSWER` using rank-1 evidence only |
 | No direct support, otherwise (weak or competing semantics) | `CLARIFY` |
 | `CLARIFY` would be chosen but attempts are exhausted (>= 2) | `REDIRECT` (suggest an officer) |
 | Setup, retrieval, or generator failure; non-string generator output | `ERROR` |
+
+The general-knowledge fallback is deliberately small and conservative. It applies only when there is no direct club support **and** the question is not club-scoped: it mentions no explicit `club`/`Quincy` term, uses no membership or payment intent words (`membership`, `fee`, `cost`, `price`, `dues`, `pay`, `join`, ...), and is not composed entirely of known club-scope words (`president`, `officer`, `meeting`, `room`, ...). Even then it fires only when the club evidence is unusable: nothing was retrieved; the top score is below 0.35 with no outside-topic overlap; the only words shared with retrieved chunks are club-role words (so `Who is the president of the United States?` is **not** answered from the club `President` chunk, even when that chunk scores well); or only club-scope words overlap below the 0.60 clarify threshold.
+
+The fallback does not weaken the club path: direct club evidence still takes priority, unqualified club-style questions (`Who is the president?`) stay club-scoped, joining and membership/payment intent stays club-scoped, unsupported club questions still redirect, and close or weak club evidence still clarifies.
 
 The thresholds live as constants in `assistant.py`:
 
@@ -291,7 +301,7 @@ The main implementation files are:
 - [`ingest.py`](../../src/chitchat_nao/rag/ingest.py) — heading-aware, paragraph-aware Markdown ingestion;
 - [`embedding.py`](../../src/chitchat_nao/rag/embedding.py) — embedding interface and SentenceTransformer provider;
 - [`retrieval.py`](../../src/chitchat_nao/rag/retrieval.py) — normalized in-memory cosine search;
-- [`generation.py`](../../src/chitchat_nao/rag/generation.py) — local GGUF model boundary, mode-aware prompt construction;
+- [`generation.py`](../../src/chitchat_nao/rag/generation.py) — local GGUF model boundary, mode-aware prompt construction (including the empty-context general-knowledge prompt);
 - [`assistant.py`](../../src/chitchat_nao/rag/assistant.py) — `ask()` routing policy, speech cleanup, citation diagnostics, CLI;
 - [`evaluator.py`](../../src/chitchat_nao/rag/evaluator.py) — KB loading, evaluation, and retrieval inspection.
 
@@ -307,17 +317,21 @@ Recall@2 = 1.000
 MRR      = 0.800
 ```
 
-All 10 answerable starter questions retrieved a gold chunk by rank two. (Two president-related gold IDs in `eval_corpus.json` were corrected to the current canonical chunk ID; the numbers above reflect the corrected labels.) These numbers are evidence about retrieval, not about answer quality, refusal behavior, or semantic grounding.
+All 10 answerable starter questions retrieved a gold chunk by rank two. (Two president-related gold IDs in `eval_corpus.json` were corrected to the current canonical chunk ID; the numbers above reflect the corrected labels.) These numbers are evidence about retrieval, not about answer quality, refusal behavior, or semantic grounding. They are also unaffected by the general-knowledge answer routing: the evaluator measures retrieval only, and routing does not change chunk embeddings, scores, or gold labels.
 
 > Here, a "gold" chunk means a chunk that the evaluation data identifies as the expected relevant source for a question.
 
-## Current limitations (07/31/2026)
+## Current limitations (08/01/2026)
 
 This section is intentionally prominent because a working demo can otherwise look more complete than it is.
 
 ### Citation state is diagnostic-only, not semantic proof
 
 `provenance_verified` is always `False`. The diagnostic only reports whether the model's citation *formatting* was structurally valid. It never proves that all claims in the answer are supported by the cited source. Semantic grounding evaluation remains future work.
+
+### General-knowledge answers are unverified and may be stale
+
+Clearly outside-topic questions are answered from the local model's general knowledge with no retrieved context and no `AskResult.evidence`. There is no source evidence, `provenance_verified` is still `False`, and nothing checks the answer against current facts. The model's training knowledge can be outdated: in a fresh live smoke it answered `Who is the president of the United States?` with `Joe Biden`. Treat general answers as best-effort model knowledge, not current or web-verified facts.
 
 ### The small model may paraphrase awkwardly
 

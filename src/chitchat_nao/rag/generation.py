@@ -72,6 +72,13 @@ class LocalLlamaCppGenerator:
                 "context. Do not answer the question or add facts not present "
                 "in the context."
             )
+        elif not request.contexts:
+            instruction = (
+                "Provide exactly one concise, speech-ready answer using "
+                "general knowledge because no supplied context is available. "
+                "Do not invent citations or claim support from supplied "
+                "context."
+            )
         else:
             instruction = (
                 "Provide exactly one concise, speech-ready answer to the "
@@ -89,11 +96,17 @@ class LocalLlamaCppGenerator:
 
     def generate(self, request: GenerationRequest) -> str:
         model = self._load_model()
-        system_message = (
-            "You ask concise clarifying questions from retrieved context."
-            if request.response_mode is ResponseMode.CLARIFY
-            else "You answer questions from retrieved context."
-        )
+        if request.response_mode is ResponseMode.CLARIFY:
+            system_message = (
+                "You ask concise clarifying questions from retrieved context."
+            )
+        elif not request.contexts:
+            system_message = (
+                "You answer questions concisely using general knowledge when "
+                "no retrieved context is supplied."
+            )
+        else:
+            system_message = "You answer questions from retrieved context."
         response = model.create_chat_completion(  # type: ignore[attr-defined]
             messages=[
                 {
