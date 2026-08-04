@@ -5,8 +5,25 @@
 '''
 from transcribe import Transcribe
 from language_model import send_message
+import qi
+import sys
 
 transcriber = None
+PORT = "9561"
+ROBOT_IP = "192.168.50.33"
+
+app = qi.Application(
+    sys.argv,
+    url=f"tcp://{ROBOT_IP}:{PORT}"
+)
+app.start()
+session = app.session
+# Create text to speech service
+tts_service = session.service("ALTextToSpeech")
+# Create a diagnostic service 
+diag_service = session.service("ALDiagnosis")
+# Disable diagnostic notifications
+#diag_service.getDiagnosisStatus(False)
 
 def main():
     global transcriber
@@ -27,6 +44,7 @@ def process_user_prompt(prompt):
     transcriber.pause()
     robot_resp = send_message(prompt)
     print(f"\nRobot: {robot_resp}\n")
+    tts_service.say(robot_resp)
     # Re-enable transcriber
     transcriber.proceed()
 
