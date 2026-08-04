@@ -1,0 +1,122 @@
+"""Local, context-bounded answer generation."""
+
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Callable
+
+from .models import ResponseMode, RetrievedContext
+
+DEFAULT_MODEL_PATH = (
+    Path.home()
+    / ".local/share/chitchat-nao/models/SmolLM2-1.7B-Instruct-Q6_K.gguf"
+)
+
+
+@dataclass(frozen=True)
+class GenerationRequest:
+    question: str
+    contexts: list[RetrievedContext]
+    response_mode: ResponseMode = ResponseMode.ANSWER
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.response_mode, ResponseMode):
+            object.__setattr__(
+                self, "response_mode", ResponseMode(self.response_mode)
+            )
+
+    @property
+    def mode(self) -> ResponseMode:
+        """Short compatibility name for the response mode."""
+        return self.response_mode
+
+
+class LocalLlamaCppGenerator:
+    """Generate an answer using a local llama.cpp model."""
+
+    def __init__(
+        self,
+        model_path: Path = DEFAULT_MODEL_PATH,
+        *,
+        llama_factory: Callable[[], object] | None = None,
+        max_tokens: int = 256,
+    ) -> None:
+        self.model_path = Path(model_path).expanduser()
+        if not self.model_path.is_file():
+            raise FileNotFoundError(f"GGUF model not found: {self.model_path}")
+        if max_tokens < 1:
+            raise ValueError("max_tokens must be positive")
+        self._llama_factory = llama_factory
+        self._max_tokens = max_tokens
+        self._model: object | None = None
+
+    def _load_model(self) -> object:
+        if self._model is not None:
+            return self._model
+        if self._llama_factory is not None:
+            self._model = self._llama_factory()
+        else:
+            from llama_cpp import Llama
+
+            self._model = Llama(model_path=str(self.model_path), verbose=False)
+        return self._model
+
+    @staticmethod
+    def _prompt(request: GenerationRequest) -> str:
+        context_lines = "\n".join(
+            f"[S{position}] {context.text}"
+            for position, context in enumerate(request.contexts, start=1)
+        )
+        if request.response_mode is ResponseMode.CLARIFY:
+            instruction = (
+                "Ask one concise clarifying question using only the supplied "
+                "context. Do not answer the question or add facts not present "
+                "in the context."
+            )
+        elif not request.contexts:
+            instruction = (
+                "Provide exactly one concise, speech-ready answer using "
+                "general knowledge because no supplied context is available. "
+                "Do not invent citations or claim support from supplied "
+                "context."
+            )
+        else:
+            instruction = (
+                "Provide exactly one concise, speech-ready answer to the "
+                "question using only the supplied context. Base it only on "
+                "the supplied context. Do not add "
+                "information that is not present in the context."
+            )
+        return (
+            "<context>\n"
+            f"{context_lines}\n"
+            "</context>\n"
+            f"{instruction}\n"
+            f"Question: {request.question}"
+        )
+
+    def generate(self, request: GenerationRequest) -> str:
+        model = self._load_model()
+        if request.response_mode is ResponseMode.CLARIFY:
+            system_message = (
+                "You ask concise clarifying questions from retrieved context."
+            )
+        elif not request.contexts:
+            system_message = (
+                "You answer questions concisely using general knowledge when "
+                "no retrieved context is supplied."
+            )
+        else:
+            system_message = "You answer questions from retrieved context."
+        response = model.create_chat_completion(  # type: ignore[attr-defined]
+            messages=[
+                {
+                    "role": "system",
+                    "content": system_message,
+                },
+                {"role": "user", "content": self._prompt(request)},
+            ],
+            temperature=0.0,
+            seed=42,
+            max_tokens=self._max_tokens,
+        )
+        return response["choices"][0]["message"]["content"]  # type: ignore[index]

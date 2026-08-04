@@ -3,4 +3,5 @@ __pycache__
 cpp_development/build
 .env
 # Prevents someone from commiting large SDK
+.local/
 naoqi-sdk-2.8.5.10-linux64
