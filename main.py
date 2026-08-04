@@ -23,7 +23,7 @@ tts_service = session.service("ALTextToSpeech")
 # Create a diagnostic service 
 diag_service = session.service("ALDiagnosis")
 # Disable diagnostic notifications
-#diag_service.getDiagnosisStatus(False)
+
 
 def main():
     global transcriber

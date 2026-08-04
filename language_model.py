@@ -42,6 +42,7 @@ def send_message(user_input):
         messages.append({"role": "assistant", "content": reply})
         
         return reply
+    
     except:
         print("Language model errored out...")
         return ""
