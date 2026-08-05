@@ -25,6 +25,8 @@ memory = session.service("ALMemory")
 # Create a notification manager instance
 notif_manager = session.service("ALNotificationManager")
 
+# TO-DO: Create a module for the Naoqi Framework integration.
+
 def main():
     global transcriber
     # Subscribe to notifications to mute diagnostic reports
