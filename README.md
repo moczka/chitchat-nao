@@ -29,9 +29,9 @@ and referenced in the CMake setup file.
 
 ## Commands Run
 
-`uv sync`
-`source .venv/bin/activate`
-`python main.py`
+- `uv sync`
+- `source .venv/bin/activate`
+- `python main.py`
 
 
 
