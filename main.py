@@ -18,16 +18,17 @@ app = qi.Application(
 )
 app.start()
 session = app.session
-# Create text to speech service
-tts_service = session.service("ALTextToSpeech")
-# Create a diagnostic service 
-diag_service = session.service("ALDiagnosis")
-# Disable diagnostic notifications
-
+# Create text to speech instance
+text_to_speech = session.service("ALTextToSpeech")
+# Create memory instance (used to subscribe to events)
+memory = session.service("ALMemory")
+# Create a notification manager instance
+notif_manager = session.service("ALNotificationManager")
 
 def main():
     global transcriber
-
+    # Subscribe to notifications to mute diagnostic reports
+    memory.subscriber("ALNotificationManager/NotificationAdded").signal.connect(on_notification_added)
     try:
          # Set up transcribing tool
         transcriber = Transcribe(on_transcription_complete=process_user_prompt)
@@ -35,7 +36,11 @@ def main():
         print('Listening... Ask Pazuzu anything.')
     except KeyboardInterrupt:
         print('Exiting...')
-        exit()
+        exit(1)
+
+def on_notification_added(notif_data):
+    # Mute hardware diagnotistic notifications by removing them.
+    notif_manager.removeNotification(notif_data["id"])
 
 def process_user_prompt(prompt):
     print(f"User: {prompt}")
@@ -44,7 +49,7 @@ def process_user_prompt(prompt):
     transcriber.pause()
     robot_resp = send_message(prompt)
     print(f"\nRobot: {robot_resp}\n")
-    tts_service.say(robot_resp)
+    text_to_speech.say(robot_resp)
     # Re-enable transcriber
     transcriber.proceed()
 
