@@ -26,6 +26,8 @@ memory = session.service("ALMemory")
 notif_manager = session.service("ALNotificationManager")
 
 # TO-DO: Create a module for the Naoqi Framework integration.
+# TO-DO: Create a module that reacts to touch events and generates a prompt
+# to solicit a response from the robot. Format in "I am [action] your [part]"
 
 def main():
     global transcriber
