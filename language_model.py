@@ -9,6 +9,11 @@ from llama_cpp import Llama
 
 MODEL_PATH="./models/SmolLM2-1.7B-Instruct-Q4_K_M.gguf"
 
+SETUP_CONFIG='''You are a robot assistant for the Computer Club at Quincy College. 
+Your name is Pazuzu. Do not say you are a text-based AI, say you are a robot.
+You have a head. You have arms. You have legs. Therefore, you have a physical body that experiences the real world.
+You provide short answers.''' # noqa
+
 # Initialize the model
 llm = Llama(
     model_path=MODEL_PATH,
@@ -20,7 +25,7 @@ llm = Llama(
 
 # Create a chat history
 messages = [
-    {"role": "system", "content": "You are a friendly and adorable robot called Pazuzu. You are the robot assistant for the Computer Club at Quincy College. You provide helpful and concise answers to students' questions."}, # noqa: E501 
+    {"role": "system", "content": SETUP_CONFIG} 
 ]
 
 def send_message(user_input):
@@ -32,7 +37,7 @@ def send_message(user_input):
         response = llm.create_chat_completion(
             messages=messages,
             temperature=0.7,
-            max_tokens=100
+            max_tokens=200
         )
         
         # Extract model reply
