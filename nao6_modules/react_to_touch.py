@@ -17,10 +17,8 @@ class ReactToTouch():
         self.id = self.touch.signal.connect(self.__onTouched, "TouchChanged")
 
     def __onTouched(self, event_name, value):
-        # Disconnect to the event when talking,
-        # to avoid repetitions
+        # Disconnect to the event when talking, to avoid repetitions
         self.touch.signal.disconnect(self.id)
-
         for (body_part, was_touched) in value:
             if was_touched:
                 # Solicit a response from the robot
@@ -28,3 +26,11 @@ class ReactToTouch():
                 break
         # Reconnect to handle other touch events
         self.id = self.touch.signal.connect(self.__onTouched, "TouchChanged")
+
+    def pause_reactions(self):
+        '''Pauses responding to touch interactions.'''
+        self.touch.signal.disconnect(self.id)
+
+    def continue_reactions(self):
+        '''Continues responding to physical touch interactions.'''
+        self.id = self.touch.signal.connect(self.__onTouched, "TouchedChanged")
