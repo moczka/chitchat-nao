@@ -4,7 +4,7 @@
 
 '''
 from transcribe import Transcribe
-from language_model import send_message
+from language_model.model import generate_response
 from modules.react_to_touch import ReactToTouch
 
 import qi
@@ -56,7 +56,7 @@ def process_user_prompt(prompt):
     print('\nThinking...\n')
     # Stop capturing audio while SLM generates an answer
     transcriber.pause()
-    robot_resp = send_message(prompt)
+    robot_resp = generate_response(prompt)
     print(f"\nRobot: {robot_resp}\n")
     animated_speech.say(robot_resp)
     # Re-enable transcriber
