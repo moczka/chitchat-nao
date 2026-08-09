@@ -35,11 +35,11 @@ except FileExistsError:
 KNOWLEDGE = ""
 # Load up knowledge base
 try:
-    for file in Path("knowledge_base").glob('*.md'):
+    for file in Path(f"{CURRENT_DIR}/../knowledge_base").glob('*.md'):
         with open(file, "r") as knowledge_file:
             KNOWLEDGE = f"{KNOWLEDGE} {knowledge_file.read()}"
 except FileExistsError:
-    print('File does not exist.')
+    print('Knowledge file does not exist.')
 
 # Create a chat history
 messages = [
