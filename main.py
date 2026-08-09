@@ -19,10 +19,12 @@ app = qi.Application(
 app.start()
 session = app.session
 # Create text to speech instance
-anim_text_to_speech = session.service("ALAnimatedSpeech")
-anim_text_to_speech.setMode("contextual")
+animated_speech = session.service("ALAnimatedSpeech")
+animated_speech.setMode("contextual")
 # Create memory instance (used to subscribe to events)
 memory = session.service("ALMemory")
+# Create an instance to touch sensors service
+
 # Create a notification manager instance
 notif_manager = session.service("ALNotificationManager")
 
@@ -54,7 +56,7 @@ def process_user_prompt(prompt):
     transcriber.pause()
     robot_resp = send_message(prompt)
     print(f"\nRobot: {robot_resp}\n")
-    anim_text_to_speech.say(robot_resp)
+    animated_speech.say(robot_resp)
     # Re-enable transcriber
     transcriber.proceed()
 
