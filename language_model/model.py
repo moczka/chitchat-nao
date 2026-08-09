@@ -5,13 +5,16 @@ Date:   04/19/2026
 Sets up the small language model
 
 '''
+from pathlib import Path
 from llama_cpp import Llama
 
-MODEL_PATH="./language_model/SmolLM2-1.7B-Instruct-Q4_K_M.gguf"
+CURRENT_DIR = Path(__file__).resolve().parent
+
+MODEL_PATH=f"{CURRENT_DIR}/SmolLM2-1.7B-Instruct-Q4_K_M.gguf"
 # DO NOT change, adjust personality file instead.
 INITIAL_CONFIG='''Do not say you are a text-based AI, say you are a robot.
 You have a head. You have arms. You have legs. Therefore, you have a physical body that experiences the real world.
-You provide short answers.''' # noqa
+You do have the ability to feel touch and physical interactions. You provide short answers.''' # noqa
 
 # Initialize the model
 llm = Llama(
@@ -23,12 +26,18 @@ llm = Llama(
 )
 PERSONALITY = ""
 # Load up personality from file
-with open("./language_model/personality.txt", "r") as file:
-    PERSONALITY = file.read()
+try:
+    with open(f"{CURRENT_DIR}/personality.txt", "r") as file:
+        PERSONALITY = file.read()
+except FileExistsError:
+    print("No personality file found.")
+
+# Load up knowledge base
+
 
 # Create a chat history
 messages = [
-    {"role": "system", "content": PERSONALITY + INITIAL_CONFIG} 
+    {"role": "system", "content": f"{PERSONALITY}. {INITIAL_CONFIG}"} 
 ]
 
 def generate_response(user_input):

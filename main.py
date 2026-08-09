@@ -5,7 +5,7 @@
 '''
 from transcribe import Transcribe
 from language_model.model import generate_response
-from modules.react_to_touch import ReactToTouch
+from nao6_modules.react_to_touch import ReactToTouch
 
 import qi
 import sys
