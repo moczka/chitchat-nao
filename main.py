@@ -5,6 +5,8 @@
 '''
 from transcribe import Transcribe
 from language_model import send_message
+from modules.react_to_touch import ReactToTouch
+
 import qi
 import sys
 
@@ -23,8 +25,6 @@ animated_speech = session.service("ALAnimatedSpeech")
 animated_speech.setMode("contextual")
 # Create memory instance (used to subscribe to events)
 memory = session.service("ALMemory")
-# Create an instance to touch sensors service
-
 # Create a notification manager instance
 notif_manager = session.service("ALNotificationManager")
 
@@ -36,6 +36,8 @@ def main():
     global transcriber
     # Subscribe to notifications to mute diagnostic reports
     memory.subscriber("ALNotificationManager/NotificationAdded").signal.connect(on_notification_added)
+    # Instantiate custom modules
+    react_to_touch = ReactToTouch(session)
     try:
          # Set up transcribing tool
         transcriber = Transcribe(on_transcription_complete=process_user_prompt)

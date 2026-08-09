@@ -9,42 +9,22 @@ from ..language_model import send_message
 
 class ReactToTouch():
     def __init__(self, session):
-
-        # Get ALMemory and ALTextToSpeech 
+        # Get ALMemory and ALTextToSpeech proxies
         self.memory_service = session.service("ALMemory")
         self.animated_speech = session.service("ALAnimatedSpeech")
         # Listen to touch events from robot sensors
         self.touch = self.memory_service.subscriber("TouchChanged")
         self.id = self.touch.signal.connect(self.__onTouched, "TouchChanged")
 
-    def __onTouched(self, strVarName, value):
+    def __onTouched(self, event_name, value):
         # Disconnect to the event when talking,
         # to avoid repetitions
         self.touch.signal.disconnect(self.id)
 
-        touched_bodies = []
-        for p in value:
-            if p[1]:
-                touched_bodies.append(p[0])
-
-        self.say(touched_bodies)
-
-        # Reconnect again to the event
+        for (body_part, was_touched) in value:
+            if was_touched:
+                # Solicit a response from the robot
+                self.say(send_message(f"I am touching your {body_part}."))
+                break
+        # Reconnect to handle other touch events
         self.id = self.touch.signal.connect(self.__onTouched, "TouchChanged")
-
-    def __say(self, bodies):
-        if (bodies == []):
-            return
-
-        sentence = "My " + bodies[0]
-
-        for b in bodies[1:]:
-            sentence = sentence + " and my " + b
-
-        if (len(bodies) > 1):
-            sentence = sentence + " are"
-        else:
-            sentence = sentence + " is"
-        sentence = sentence + " touched."
-
-        self.tts.say(sentence)
