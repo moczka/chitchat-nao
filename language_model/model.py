@@ -8,7 +8,7 @@ Sets up the small language model
 from pathlib import Path
 from llama_cpp import Llama
 
-CURRENT_DIR = Path(__file__).resolve().parent
+CURRENT_DIR = Path(__file__).parent
 
 MODEL_PATH=f"{CURRENT_DIR}/SmolLM2-1.7B-Instruct-Q4_K_M.gguf"
 # DO NOT change, adjust personality file instead.
@@ -32,12 +32,21 @@ try:
 except FileExistsError:
     print("No personality file found.")
 
+KNOWLEDGE = ""
 # Load up knowledge base
-
+try:
+    for file in Path("knowledge_base").glob('*.md'):
+        with open(file, "r") as knowledge_file:
+            KNOWLEDGE = f"{KNOWLEDGE} {knowledge_file.read()}"
+except FileExistsError:
+    print('File does not exist.')
 
 # Create a chat history
 messages = [
-    {"role": "system", "content": f"{PERSONALITY}. {INITIAL_CONFIG}"} 
+    {
+        "role": "system", 
+        "content": f"{PERSONALITY}. {KNOWLEDGE}. {INITIAL_CONFIG}."
+     } 
 ]
 
 def generate_response(user_input):
