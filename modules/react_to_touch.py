@@ -24,7 +24,7 @@ class ReactToTouch():
         for (body_part, was_touched) in value:
             if was_touched:
                 # Solicit a response from the robot
-                self.say(send_message(f"I am touching your {body_part}."))
+                self.say(send_message(f"I am rubbing your {body_part} gently."))
                 break
         # Reconnect to handle other touch events
         self.id = self.touch.signal.connect(self.__onTouched, "TouchChanged")
