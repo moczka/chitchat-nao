@@ -39,7 +39,7 @@ class ReactToTouch():
         for body_part in body_parts:
             if body_part[1]:
                 # Solicit a response from the robot
-                self.animated_speech.say(self.__generate_response(body_part))
+                self.animated_speech.say(self.__generate_response(body_part[0]))
                 break
         #Reconnect to handle other touch events
         self.id = self.touch.signal.connect(functools.partial(self.__on_touched, "TouchChanged"))
@@ -47,11 +47,15 @@ class ReactToTouch():
     def __generate_response(body_part_info):
         info = body_part_info.split("/")
         # Gather the information regarding the body part
-        part_label = info[1]
-        part_location = info[2]
+        part_label = info[0]
+        part_location = info[2] if len(info) > 2 else ""
         # Compose prompt for language model
         verb = "grabbing" if re.search('Arm', part_label) else "rubbing"
-        prompt = f"I am {verb} your {PART_LABEL_TO_NAME[part_label]} from the {part_location.lower()} gently."
+        prompt = ""
+        if part_location != "":
+            prompt = f"I am {verb} your {PART_LABEL_TO_NAME[part_label]} from the {part_location.lower()} gently."
+        else:
+            prompt = f"I am {verb} your {PART_LABEL_TO_NAME[part_label]} gently."
         # Generate response
         return generate_response(prompt)
 
