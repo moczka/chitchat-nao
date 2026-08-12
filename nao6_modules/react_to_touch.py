@@ -51,7 +51,7 @@ class ReactToTouch():
         part_location = info[2]
         # Compose prompt for language model
         verb = "grabbing" if re.search('Arm', part_label) else "rubbing"
-        prompt = f"I am {verb} your {PART_LABEL_TO_NAME[part_label]} on the {part_location.lower()} gently."
+        prompt = f"I am {verb} your {PART_LABEL_TO_NAME[part_label]} from the {part_location.lower()} gently."
         # Generate response
         return generate_response(prompt)
 
