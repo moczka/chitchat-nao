@@ -3,6 +3,8 @@
     Date:   June 9, 2026
 
 '''
+import functools
+
 from transcribe import Transcribe
 from language_model.model import generate_response
 from nao6_modules.react_to_touch import ReactToTouch
@@ -22,20 +24,21 @@ app.start()
 session = app.session
 # Create text to speech instance
 animated_speech = session.service("ALAnimatedSpeech")
-animated_speech.setMode("contextual")
 # Create memory instance (used to subscribe to events)
 memory = session.service("ALMemory")
 # Create a notification manager instance
 notif_manager = session.service("ALNotificationManager")
+# Notification publisher
+notif_pub = memory.subscriber("notificationAdded")
 
 # TO-DO: Create a module for the Naoqi Framework integration.
 # TO-DO: Create a module that reacts to touch events and generates a prompt
 # to solicit a response from the robot. Format in "I am [action] your [part]"
 
 def main():
-    global transcriber
+    global transcriber, session, notif_pub
     # Subscribe to notifications to mute diagnostic reports
-    memory.subscriber("ALNotificationManager/NotificationAdded").signal.connect(on_notification_added)
+    notif_pub.signal.connect(functools.partial(on_notification_added, "notificationAdded"))
     # Instantiate custom modules
     react_to_touch = ReactToTouch(session)
     try:
@@ -47,9 +50,10 @@ def main():
         print('Exiting...')
         exit(1)
 
-def on_notification_added(notif_data):
+def on_notification_added(event_name, notif_id):
     # Mute hardware diagnotistic notifications by removing them.
-    notif_manager.removeNotification(notif_data["id"])
+    notif_manager.remove(notif_id)
+    
 
 def process_user_prompt(prompt):
     print(f"User: {prompt}")
