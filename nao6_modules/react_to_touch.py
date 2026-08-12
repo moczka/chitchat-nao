@@ -15,9 +15,9 @@ class ReactToTouch():
         self.animated_speech = session.service("ALAnimatedSpeech")
         # Listen to touch events from robot sensors
         self.touch = self.memory_service.subscriber("TouchChanged")
-        self.id = self.touch.signal.connect(functools.partial(self.__onTouched, "TouchChanged"))
+        self.id = self.touch.signal.connect(functools.partial(self.__on_touched, "TouchChanged"))
 
-    def __onTouched(self, event_name, value):
+    def __on_touched(self, event_name, value):
         # Disconnect to the event when talking, to avoid repetitions
         print("On touch was called.")
         self.touch.signal.disconnect(self.id)
@@ -30,7 +30,7 @@ class ReactToTouch():
         #         self.animated_speech.say(generate_response(f"I am rubbing your {body_part} gently."))
         #         break
         # Reconnect to handle other touch events
-        self.id = self.touch.signal.connect(functools.partial(self.__onTouched, "TouchChanged"))
+        self.id = self.touch.signal.connect(functools.partial(self.__on_touched, "TouchChanged"))
 
     def pause_reactions(self):
         '''Pauses responding to touch interactions.'''
@@ -38,4 +38,4 @@ class ReactToTouch():
 
     def continue_reactions(self):
         '''Continues responding to physical touch interactions.'''
-        self.id = self.touch.signal.connect(self.__onTouched, "TouchedChanged")
+        self.id = self.touch.signal.connect(self.__on_touched, "TouchedChanged")
