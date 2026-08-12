@@ -101,7 +101,7 @@ class Transcribe:
         is_speech: bool = self.__vad.is_speech(chunk, RATE)
 
         if is_speech:
-            if self.__has_spoken == False:
+            if not self.__has_spoken:
                 self.__print('Listening...')
                 self.__has_spoken = True
                 # Removes any previous silence
