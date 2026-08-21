@@ -45,8 +45,8 @@ except FileExistsError:
 messages = [
     {
         "role": "system", 
-        "content": f"{PERSONALITY}. {KNOWLEDGE}. {INITIAL_CONFIG}."
-     } 
+        "content": f"{PERSONALITY} {KNOWLEDGE} {INITIAL_CONFIG}."
+    } 
 ]
 
 def generate_response(user_input):
