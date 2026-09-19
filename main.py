@@ -8,6 +8,7 @@ import functools
 from transcribe import Transcribe
 from language_model.model import generate_response
 from nao6_modules.react_to_touch import ReactToTouch
+from nao6_modules.detect_face import FaceDetection
 
 import qi
 import sys
@@ -41,6 +42,8 @@ def main():
     notif_pub.signal.connect(functools.partial(on_notification_added, "notificationAdded"))
     # Instantiate custom modules
     react_to_touch = ReactToTouch(session)
+    react_to_face = FaceDetection(session, greet_user)
+
     try:
          # Set up transcribing tool
         transcriber = Transcribe(on_transcription_complete=process_user_prompt)
@@ -53,7 +56,9 @@ def main():
 def on_notification_added(event_name, notif_id):
     # Mute hardware diagnotistic notifications by removing them.
     notif_manager.remove(notif_id)
-    
+
+def greet_user(face_detected):
+    pass
 
 def process_user_prompt(prompt):
     print(f"User: {prompt}")

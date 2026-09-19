@@ -58,7 +58,7 @@ def generate_response(user_input):
         response = llm.create_chat_completion(
             messages=messages,
             temperature=0.7,
-            max_tokens=200
+            max_tokens=70
         )
         
         # Extract model reply

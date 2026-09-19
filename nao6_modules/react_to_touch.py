@@ -44,7 +44,7 @@ class ReactToTouch():
         #Reconnect to handle other touch events
         self.id = self.touch.signal.connect(functools.partial(self.__on_touched, "TouchChanged"))
 
-    def __generate_response(body_part_info):
+    def __generate_response(self, body_part_info):
         info = body_part_info.split("/")
         # Gather the information regarding the body part
         part_label = info[0]
@@ -53,11 +53,12 @@ class ReactToTouch():
         verb = "grabbing" if re.search('Arm', part_label) else "rubbing"
         prompt = ""
         if part_location != "":
-            prompt = f"I am {verb} your {PART_LABEL_TO_NAME[part_label]} from the {part_location.lower()} gently."
+            prompt = f"I am {verb} your {PART_LABEL_TO_NAME[part_label]} gently."
         else:
             prompt = f"I am {verb} your {PART_LABEL_TO_NAME[part_label]} gently."
         # Generate response
-        return generate_response(prompt)
+        resp = generate_response(prompt)
+        return resp
 
     def pause_reactions(self):
         '''Pauses responding to touch interactions.'''
